@@ -7,7 +7,7 @@
 #pragma comment(lib,"opengl32.lib")//for linking
 #pragma comment(lib,"glew32.lib")//for linking
 
-
+//
 int Win_Width = 800;
 int Win_Height = 600;
 using namespace vmath;
