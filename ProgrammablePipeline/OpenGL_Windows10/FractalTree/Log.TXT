@@ -1,0 +1,28 @@
+Log File Created
+Value of index is 112
+Initialization successfull
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+index is 112
+Log File Closed

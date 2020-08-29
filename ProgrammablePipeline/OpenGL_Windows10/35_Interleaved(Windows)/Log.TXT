@@ -1,0 +1,13 @@
+Log File Created
+VertexShader :
+0(2) : error C1503: undefined variable "u_LAUniform"
+0(2) : error C1503: undefined variable "u_KAUniform"
+0(2) : error C1503: undefined variable "u_LDUniform"
+0(2) : error C1503: undefined variable "u_KDUniform"
+0(2) : error C1503: undefined variable "u_LSUniform"
+0(2) : error C1503: undefined variable "u_KSUniform"
+0(2) : error C1503: undefined variable "u_MaterialShininess"
+0(2) : error C1503: undefined variable "phongADSLight"
+0(2) : error C1503: undefined variable "phongADSLight"
+
+Log File Closed

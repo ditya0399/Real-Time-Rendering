@@ -1,0 +1,21 @@
+	"int Samples = 200;" \
+			"float Intensity = 2.225;" \
+			"float Decay = 0.86875;" \
+			"vec2 TexCoord = out_texCoord.xy;" \
+			"vec2 TexCoord1 = out_texCoord.xy;" \
+			"vec2 Direction = vec2(0.5) * TexCoord.xy;" \
+			"vec2 Direction1 = vec2(0.5) * TexCoord1.xy;" \
+			"Direction = Direction / Samples;" \
+			"Direction1 = Direction1 / Samples;" \
+
+			"vec3 Color = texture(ColorBuffer,TexCoord).rgb;" \
+			"vec3 Color1 = texture(ColorBuffer1,TexCoord1).rgb;" \
+			"for(int Sample = 0;Sample < Samples;Sample++)" \
+			"{" \
+				"Color = Color +Color1 + texture(ColorBuffer,TexCoord).rgb * Intensity;" \
+				"Intensity = Intensity *Decay;" \
+				"TexCoord = TexCoord  - Direction/2;" \
+				"TexCoord1 = TexCoord1 * Direction1/24;" \
+			"}" \
+			"FragColor = vec4(Color,1.0);" \
+		"}";

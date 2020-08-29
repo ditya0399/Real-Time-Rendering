@@ -1,0 +1,1174 @@
+#include<Windows.h>
+#include"glew.h"               // This SHOULD be above GL.h header.
+#include<gl/GL.h>
+#include<stdio.h>
+#include"vmath.h"
+#pragma comment(lib,"opengl32.lib")//for linking
+#pragma comment(lib,"glew32.lib")//for linking
+
+int color = 1;
+
+
+// CUDA HEADERS
+#include "include/cuda_gl_interop.h"
+#include"include/cuda_runtime.h"
+#include"inc/helper_cuda.h"
+#include"inc/helper_timer.h"
+#pragma comment(lib,"cudart.lib")
+
+int k = 0;
+GLuint ColorUniform;
+//CUDA VARIABLES
+int gMesh_Width = 64;
+int gMesh_Height = 64;
+#define MYARRAYSIZE1024 1024 * 1024 * 4
+#define MYARRAYSIZE64 64 * 64 * 4
+#define MYARRAYSIZE128 128 * 128 * 4
+#define MYARRAYSIZE256 256 * 256 * 4
+#define MYARRAYSIZE512 512 * 512 * 4
+#define MYARRAYSIZE2048 2048 * 2048 * 4
+#define MYARRAYSIZE4096 4096 * 4096 * 4
+
+//float pos[4096][4096][4];
+float pos64[64][64][4];
+float pos128[128][128][4];
+float pos256[256][256][4];
+float pos512[512][512][4];
+float pos1024[1024][1024][4];
+float pos2048[2048][2048][4];
+float pos4096[4096][4096][4];
+
+
+struct cudaGraphicsResource *graphicsResource = NULL;
+GLuint vbo_GPU;
+float animationTime = 0.0f;
+bool bOnGPU = false;
+cudaError_t error;
+
+int Win_Width = 800;
+int Win_Height = 600;
+using namespace vmath;
+
+static GLfloat angle = 0.0f;
+GLuint gShaderProgramObject;
+
+enum
+{
+	AMC_ATTRIBUTE_POSITION = 0,
+	AMC_ATTRIBUTE_COLOR,
+	AMC_ATTRIBUTE_NORMAL,
+	AMC_ATTRIBUTE_TEXCOORD0
+};
+
+//
+GLuint vao;
+GLuint vbo;
+//GLuint vbo_GPU;
+GLuint mvpUniform;
+mat4 perspectiveProjectionMatrix;
+
+
+//
+
+HDC ghdc = NULL;
+HGLRC ghglrc = NULL;
+HWND ghwnd;
+HWND hwnd;
+FILE *gpLogFile = NULL;
+WINDOWPLACEMENT gwpprev = { sizeof(WINDOWPLACEMENT) };
+DWORD gdwStyle = 0;
+bool gbIsActiveWindow = false;
+bool gbIsFullScreen = false;
+
+LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+void ToggleFullScreen(void);
+void update(void);
+void uninitialize(void);
+void launchCPUKernel(unsigned int MeshWidth, unsigned int MeshHeight, float Time);
+void launchCudaKernel(float4 *,unsigned int  , unsigned int  ,float );
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLine, int iCmdShow)
+{
+	int initialize(void);
+
+	//Variable Declarations
+	bool bIsDone = false;
+	int iRet = 0;
+	TCHAR szAppName[] = TEXT("perspective");
+	WNDCLASSEX wndclass;
+	MSG msg;
+	void display(void);
+
+	if (fopen_s(&gpLogFile, "Log.TXT", "w") != 0)
+	{
+		MessageBox(NULL, TEXT("LOG FILE WAS NOT CREATED"), TEXT("ERROR"), MB_OK);
+		exit(0);
+	}
+	else
+	{
+		fprintf_s(gpLogFile, "Log File Created\n");
+	}
+
+	//andclassinitialization
+	wndclass.cbSize = sizeof(WNDCLASSEX);
+	wndclass.style = CS_HREDRAW | CS_VREDRAW;// | CS_OWNDC;
+	wndclass.cbClsExtra = 0;
+	wndclass.cbWndExtra = 0;
+	wndclass.lpfnWndProc = WndProc;
+	wndclass.hInstance = hInstance;
+	wndclass.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+	wndclass.hCursor = LoadCursor(NULL, IDC_ARROW);
+	wndclass.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+	wndclass.lpszClassName = szAppName;
+	wndclass.lpszMenuName = NULL;
+	wndclass.hIconSm = LoadIcon(NULL, IDI_APPLICATION);
+
+	if (RegisterClassEx(&wndclass) == 0)
+	{
+		//Failed to register wndclassex
+	}
+
+	//CreateWindow
+	hwnd = CreateWindowEx(WS_EX_APPWINDOW,
+		szAppName,
+		TEXT("OrthoTriangle"),
+		WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS | WS_VISIBLE,
+		100,
+		100,
+		Win_Width, Win_Height,
+		NULL,
+		NULL,
+		hInstance,
+		0);
+
+	ghwnd = hwnd;
+
+	iRet = initialize();
+	if (iRet == -1)
+	{
+		fprintf_s(gpLogFile, "choosePixekFormat() Failed\n");
+		DestroyWindow(hwnd);
+	}
+	else if (iRet == -2)
+	{
+		fprintf_s(gpLogFile, "SetPixelFormat() Failed\n");
+		DestroyWindow(hwnd);
+	}
+	else if (iRet == -3)
+	{
+		fprintf_s(gpLogFile, "wglCreateContext() Failed\n");
+		DestroyWindow(hwnd);
+	}
+	else if (iRet == -4)
+	{
+		fprintf_s(gpLogFile, "wglMakeCurrent() Failed\n");
+		DestroyWindow(hwnd);
+	}
+	else
+	{
+		fprintf_s(gpLogFile, "Initialization successfull\n");
+	}
+
+	ShowWindow(hwnd, iCmdShow);
+	UpdateWindow(hwnd);
+	SetFocus(hwnd);
+
+	//gameloop
+	while (bIsDone == false)
+	{
+		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))
+		{
+			if (msg.message == WM_QUIT)
+			{
+				bIsDone = true;
+			}
+			else
+			{
+				TranslateMessage(&msg);
+				DispatchMessage(&msg);
+			}
+		}
+		else
+		{
+			if (gbIsActiveWindow == true)
+			{
+				//Here actually play the game. 
+
+			}
+			/*Here actually call Display,As this is Double Buffer Program. No need of WM_PAINT*/
+
+			display();
+		}
+	}
+	return((int)msg.wParam);
+}
+
+LRESULT CALLBACK WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
+{
+	void resize(int, int);
+
+
+	switch (iMsg)
+	{
+	case WM_CREATE:
+
+		break;
+
+	case WM_SETFOCUS:
+		gbIsActiveWindow = true;
+		break;
+
+	case WM_KILLFOCUS:
+		gbIsActiveWindow = false;
+		break;
+
+	case WM_SIZE:
+		resize(LOWORD(lParam), HIWORD(lParam));
+		break;
+
+	case WM_ERASEBKGND:
+		return(0);
+
+	case WM_CLOSE:
+		DestroyWindow(hwnd);
+		break;
+
+	case WM_KEYDOWN:
+
+		switch (wParam)
+		{
+		case VK_ESCAPE:
+			DestroyWindow(hwnd);
+			break;
+		case VK_NUMPAD1:
+			k = 1;
+			gMesh_Width = 64;
+			gMesh_Height = 64;
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE64 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		//	pos[64][64][4];
+			glBindBuffer(GL_ARRAY_BUFFER, vbo_GPU);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE64 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			error = cudaGraphicsGLRegisterBuffer(&graphicsResource, vbo_GPU, cudaGraphicsMapFlagsWriteDiscard);
+			break;
+		case VK_NUMPAD2:
+			k = 2;
+			gMesh_Width = 128;
+			gMesh_Height = 128;
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE128 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		//	pos[128][128][4];
+			glBindBuffer(GL_ARRAY_BUFFER, vbo_GPU);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE128 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			error = cudaGraphicsGLRegisterBuffer(&graphicsResource, vbo_GPU, cudaGraphicsMapFlagsWriteDiscard);
+			break;
+		case VK_NUMPAD3:
+			k = 3;
+			gMesh_Width = 256;
+			gMesh_Height = 256;
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE256 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		//	pos[256][256][4];
+			glBindBuffer(GL_ARRAY_BUFFER, vbo_GPU);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE256 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			error = cudaGraphicsGLRegisterBuffer(&graphicsResource, vbo_GPU, cudaGraphicsMapFlagsWriteDiscard);
+			break;
+		case VK_NUMPAD4:
+			k = 4;
+			gMesh_Width = 512;
+			gMesh_Height = 512;
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE512 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		//	pos[512][512][4];
+			glBindBuffer(GL_ARRAY_BUFFER, vbo_GPU);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE512 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			error = cudaGraphicsGLRegisterBuffer(&graphicsResource, vbo_GPU, cudaGraphicsMapFlagsWriteDiscard);
+			break;
+		case VK_NUMPAD5:
+			k = 5;
+			gMesh_Width = 1024;
+			gMesh_Height = 1024;
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE1024 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		//	pos[gMesh_Width][gMesh_Height][4];
+			glBindBuffer(GL_ARRAY_BUFFER, vbo_GPU);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE1024 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			error = cudaGraphicsGLRegisterBuffer(&graphicsResource, vbo_GPU, cudaGraphicsMapFlagsWriteDiscard);
+			break;
+		case VK_NUMPAD6:
+			k = 6;
+			gMesh_Width = 2048;
+			gMesh_Height = 2048;
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE2048 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		//	pos[2048][2048][4];
+			glBindBuffer(GL_ARRAY_BUFFER, vbo_GPU);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE2048 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			error = cudaGraphicsGLRegisterBuffer(&graphicsResource, vbo_GPU, cudaGraphicsMapFlagsWriteDiscard);
+			break;
+		case VK_NUMPAD7:
+			k = 7;
+			gMesh_Width = 4096;
+			gMesh_Height = 4096;
+			glBindBuffer(GL_ARRAY_BUFFER, vbo);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE4096 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+		//	pos[4096][4096][4];
+			glBindBuffer(GL_ARRAY_BUFFER, vbo_GPU);
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE4096 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+			glBindBuffer(GL_ARRAY_BUFFER, 0);
+			error = cudaGraphicsGLRegisterBuffer(&graphicsResource, vbo_GPU, cudaGraphicsMapFlagsWriteDiscard);
+			break;
+
+		
+		}
+		break;
+	case WM_CHAR:
+		switch (wParam)
+		{
+		case 'F':
+		case 'f':
+			ToggleFullScreen();
+			break;
+		case 'H':
+		case 'h':
+			bOnGPU = true;
+			break;
+		case 'C':
+		case 'c':
+			bOnGPU = false;
+			break;
+		case 'R':
+		case 'r':
+			color = 1;
+			glUniform3f(ColorUniform, 1.0f, 0.0f, 0.0f);
+			break;
+		case 'B':
+		case 'b':
+			color = 2;
+			
+			break;
+		case 'G':
+		case 'g':
+			color = 3;
+			
+			break;
+		case 'Y':
+		case 'y':
+			color = 4;
+			
+			break;
+		case 'O':
+		case 'o':
+			color = 5;
+			
+			break;
+		case 'P':
+		case 'p':
+			color = 6;
+			
+			break;
+		case 'W':
+		case 'w':
+			color = 7;
+			break;
+		}
+
+		break;
+
+	case WM_DESTROY:
+		uninitialize();
+		PostQuitMessage(0);
+		break;
+	}
+	return(DefWindowProc(hwnd, iMsg, wParam, lParam));
+}
+
+int initialize(void)
+{
+	int devCount;
+	error = cudaGetDeviceCount(&devCount);
+	if (error != cudaSuccess)
+	{
+		
+		fprintf(gpLogFile, "ERROR : DevCount is 0\n");
+		DestroyWindow(hwnd);
+	}
+	else if (devCount == 0)
+	{
+		fprintf(gpLogFile, "ERROR : DevCount is 0\n");
+		DestroyWindow(hwnd);
+	}
+	else
+	{
+		cudaSetDevice(0);
+	}
+
+
+	GLuint gVertexShaderObject;
+	GLuint gFragmentShaderObject;
+
+
+	GLenum result;
+	void resize(int, int);
+
+	PIXELFORMATDESCRIPTOR pfd;
+	int iPixelFormatIndex;
+
+	memset((void*)&pfd, NULL, sizeof(PIXELFORMATDESCRIPTOR));
+	pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
+	pfd.nVersion = 1;
+	pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+	pfd.iPixelType = PFD_TYPE_RGBA;
+	pfd.cColorBits = 32;
+	pfd.cRedBits = 8;
+	pfd.cGreenBits = 8;
+	pfd.cBlueBits = 8;
+	pfd.cAlphaBits = 8;
+	pfd.cDepthBits = 32;
+	ghdc = GetDC(ghwnd);
+
+	iPixelFormatIndex = ChoosePixelFormat(ghdc, &pfd);
+	if (iPixelFormatIndex == 0)
+	{
+		return(-1);
+	}
+
+	if (SetPixelFormat(ghdc, iPixelFormatIndex, &pfd) == FALSE)
+	{
+		return(-2);
+	}
+
+	ghglrc = wglCreateContext(ghdc);
+
+	if (ghglrc == NULL)
+	{
+		return(-3);
+	}
+
+	if (wglMakeCurrent(ghdc, ghglrc) == FALSE)
+	{
+		return(-4);
+	}
+	result = glewInit();
+	if (result != GLEW_OK)
+	{
+		fprintf(gpLogFile, "ERROR : glewInit FAILED!!!\n");
+		uninitialize();
+		DestroyWindow(hwnd);
+	}
+
+
+
+	//////////////////////////////// V E R T E X - S H A D E R //////////////////////////
+
+
+	//Define Vertex Shader Object
+	gVertexShaderObject = glCreateShader(GL_VERTEX_SHADER); //This command will create the Shader Object
+	//Now Write vertex shader code
+	const GLchar **p;
+	const GLchar *vertexShaderSourceCode =
+
+		"#version 430 core" \
+		"\n"
+		"in vec4 vPosition;" \
+		"uniform mat4 u_mvp_matrix;" \
+
+		"void main(void)" \
+		"{" \
+		"gl_Position = u_mvp_matrix * vPosition;" \
+
+		"}";
+	// GPU will run the above code. And GPU WILL RUN FOR PER VERTEX. If there are 1000 vertex. Then GPU will run this shader for
+	//1000 times. We are Multiplying each vertex with the Model View Matrix.
+	//And how does the GPU gets to know about at what offset the array has to be taken . Go to glVertexAttribPointer() in Display.
+	// in = Input. 
+
+	//p = &vertexShaderSourceCode;
+		//Specify above source code to the vertex shader object
+	glShaderSource(gVertexShaderObject, 1, (const GLchar **)&vertexShaderSourceCode, NULL);
+
+	//Compile the vertex shader 
+	glCompileShader(gVertexShaderObject);
+
+	//////////////// Error Checking//////////////////
+	//Code for catching the errors 
+	GLint iShaderCompileStatus = 0;
+	GLint iInfoLogLength = 0;
+	GLchar *szInfoLog = NULL;
+
+
+	glGetShaderiv(gVertexShaderObject, GL_COMPILE_STATUS, &iShaderCompileStatus);
+	if (iShaderCompileStatus == GL_FALSE)
+	{
+		glGetShaderiv(gVertexShaderObject, GL_INFO_LOG_LENGTH, &iInfoLogLength);
+		if (iInfoLogLength > 0)
+		{
+			szInfoLog = (GLchar *)malloc(iInfoLogLength);
+			if (szInfoLog != NULL)
+			{
+				GLsizei written;
+				glGetShaderInfoLog(gVertexShaderObject, iInfoLogLength, &written, szInfoLog);
+				fprintf(gpLogFile, "%s\n", szInfoLog);
+				free(szInfoLog);
+				uninitialize();
+				DestroyWindow(hwnd);
+				exit(0);
+
+
+			}
+		}
+	}
+	/////////////////    F R A G M E N T S H A D E R            //////////////////////////
+	//Define Vertex Shader Object
+	gFragmentShaderObject = glCreateShader(GL_FRAGMENT_SHADER); //This command will create the Shader Object
+	//Now Write vertex shader code
+	const GLchar *fragmentShaderSourceCode =
+		"#version 430 core" \
+		"\n" \
+		"out vec4 FragColor;" \
+		"uniform vec3 Color;" \
+		"void main(void)" \
+		"{" \
+		"FragColor =  vec4(Color,0.0);" \
+		"}";
+
+	//FragColor = vec4(1,1,1,1) = White Color
+	//this means here we are giving color to the Triangle.
+
+
+
+
+	//Specify above source code to the vertex shader object
+	glShaderSource(gFragmentShaderObject, 1, (const GLchar **)&fragmentShaderSourceCode, NULL);
+
+	//Compile the vertex shader 
+	glCompileShader(gFragmentShaderObject);
+	//Code for catching the errors 
+		   /*iShaderCompileStatus = 0;
+		   iInfoLogLength = 0;*/
+	szInfoLog = NULL;
+
+
+	glGetShaderiv(gFragmentShaderObject, GL_COMPILE_STATUS, &iShaderCompileStatus);
+	if (iShaderCompileStatus == GL_FALSE)
+	{
+		glGetShaderiv(gFragmentShaderObject, GL_INFO_LOG_LENGTH, &iInfoLogLength);
+		if (iInfoLogLength > 0)
+		{
+			szInfoLog = (GLchar *)malloc(iInfoLogLength);
+			if (szInfoLog != NULL)
+			{
+				GLsizei written1;
+				glGetShaderInfoLog(gFragmentShaderObject, iInfoLogLength, &written1, szInfoLog);
+				fprintf(gpLogFile, "%s\n", szInfoLog);
+				free(szInfoLog);
+				uninitialize();
+				DestroyWindow(hwnd);
+				exit(0);
+
+
+			}
+		}
+	}
+	// CREATE SHADER PROGRAM OBJECT
+	gShaderProgramObject = glCreateProgram();
+	//attach vertex shader to the gShaderProgramObject
+	glAttachShader(gShaderProgramObject, gVertexShaderObject);
+
+	//attach fragment shader to the gShaderProgramObject
+	glAttachShader(gShaderProgramObject, gFragmentShaderObject);
+
+
+	//Pre-Linking  binding to vertexAttributes
+	glBindAttribLocation(gShaderProgramObject, AMC_ATTRIBUTE_POSITION, "vPosition");
+
+	//Here the above line means that we are linking the GPU's variable vPosition with the CPU's  enum member  i.e AMC_ATTRIBUTE_POSITION .
+	//So whatever changes will be done in AMC_ATTRIBUTE_POSITION , those will also reflect in vPosition
+
+	//RULE : ALWAYS BIND THE ATTRIBUTES BEFORE LINKING AND BIND THE UNIFORM AFTER LINKING.
+
+	//Link the shader program 
+	glLinkProgram(gShaderProgramObject);
+
+	//Code for catching the errors 
+	GLint iProgramLinkStatus = 0;
+
+
+
+	glGetProgramiv(gShaderProgramObject, GL_LINK_STATUS, &iProgramLinkStatus);
+	if (iProgramLinkStatus == GL_FALSE)
+	{
+		glGetProgramiv(gShaderProgramObject, GL_INFO_LOG_LENGTH, &iInfoLogLength);
+		if (iInfoLogLength > 0)
+		{
+			szInfoLog = (GLchar *)malloc(iInfoLogLength);
+			if (szInfoLog != NULL)
+			{
+				GLsizei written3;
+				glGetProgramInfoLog(gShaderProgramObject, iInfoLogLength, &written3, szInfoLog);
+				fprintf(gpLogFile, "%s\n", szInfoLog);
+				free(szInfoLog);
+				uninitialize();
+				DestroyWindow(hwnd);
+				exit(0);
+
+
+			}
+		}
+	}
+
+
+	//POST Linking
+	//Retrieving uniform locations 
+	mvpUniform = glGetUniformLocation(gShaderProgramObject, "u_mvp_matrix");
+	ColorUniform= glGetUniformLocation(gShaderProgramObject, "Color");
+	//Here we have done all the preparations of data transfer from CPU to GPU
+
+	const GLfloat triangleVertices[] =
+	{
+		0.0f,1.0f,0.0f,
+		-1.0f,-1.0f,0.0f,
+		1.0f,-1.0f,0.0f
+	};
+
+	// Using Nested Loop 0Out the whole Pos Array
+	/*for (int i = 0; i < gMesh_Width; i++)
+	{
+		for (int j = 0; j < gMesh_Height; j++)
+		{
+			for (int k = 0; k < 4; k++)
+			{
+				pos[i][j][k] = 0.0f;
+			}
+		}
+	}*/
+	memset(pos1024, 0, sizeof(pos1024));
+	memset(pos64, 0, sizeof(pos64));
+	memset(pos128, 0, sizeof(pos128));
+	memset(pos256, 0, sizeof(pos256));
+	memset(pos512, 0, sizeof(pos512));
+	memset(pos2048, 0, sizeof(pos2048));
+	memset(pos4096, 0, sizeof(pos4096));
+	//Basically we are giving the vertices coordinates in the above array
+
+	//Create vao - Vertex array objects
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+	glGenBuffers(1, &vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	//in the above statement we have accesed the GL-ARRAY_BUFFER using vbo. Without it wouldn't be possible to get GL_ARRAY_BUFFER
+	//For the sake of understanding . GL_ARRAY_BUFFER is in the GPU side ad=nd we have bind our CPU side vbo with it like a Pipe to get the access.
+	glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE64 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+	//The above statement states that , we are passing our vertices array to the GPU and GL_STATIC_DRAW means draw it now only. Don't draw it in Runtime. 
+	//The below statement states that after storing the data in the GPU'S buffer . We are passing it to the vPosition now . 
+
+	//glVertexAttribPointer(AMC_ATTRIBUTE_POSITION, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+	////GL_FALSE = We are not giving normalized coordinates as our coordinates are not converted in 0 - 1 range.
+	////3 = This is the thing I was talking about in initialize. Here, we are telling GPU to break our array in 3 parts . 
+	////0 and Null are for the Interleaved. 
+	////GL_FLOAT- What is the type? .
+	////AMC_ATTRIBUTE_POSITION. here we are passing data to vPosition. 
+
+	//glEnableVertexAttribArray(AMC_ATTRIBUTE_POSITION);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+
+	// GPU 
+	glGenBuffers(1, &vbo_GPU);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_GPU);
+	glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE64 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	//Register our vbo with the CUDA GRAPHICS RESOURCE
+	error = cudaGraphicsGLRegisterBuffer(&graphicsResource, vbo_GPU, cudaGraphicsMapFlagsWriteDiscard);
+
+	glBindVertexArray(0);
+
+
+	//Depth Lines
+	glClearDepth(1.0f);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
+	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LEQUAL);
+	//initializing Perspective ProjectionMatrix to identity.
+	perspectiveProjectionMatrix = mat4::identity();
+
+	resize(Win_Width, Win_Height);
+
+	return(0);
+}
+
+void resize(int width, int height)
+{
+
+
+	if (height == 0)
+	{
+		height = 1;
+	}
+
+	glViewport(0, 0, (GLsizei)width, (GLsizei)height);
+
+	/*if (width < height)
+	{
+		orthographicProjectionMatrix = ortho(
+			-100.0f, 100.0f,
+			-100.0f * ((float)height / (float)width), 100.0f * ((float)height / (float)width),
+			-100.0f, 100.0f);
+	}
+	else
+	{
+		orthographicProjectionMatrix = ortho(
+			-100.0f * ((float)width / (float)height), 100.0f * ((float)width / (float)height),
+			-100.0f, 100.0f,
+			-100.0f, 100.0f);
+	}*/
+	perspectiveProjectionMatrix = perspective(45.0f,
+		(GLfloat)width / (GLfloat)height,
+		0.1f,
+		100.0f);
+
+}
+
+
+
+void display(void)
+{
+
+
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glUseProgram(gShaderProgramObject);
+
+	float4 *pPos = NULL;
+	size_t byteCount;
+	glBindVertexArray(vao);
+	if (bOnGPU == true)
+	{
+		// 4 Steps Total : Do error checking on each except 3rd step
+		cudaGraphicsMapResources(1, &graphicsResource, 0);
+		if (error != cudaSuccess)
+		{
+			fprintf(gpLogFile, "STEP 1  FAILED\n");
+		}
+		error = cudaGraphicsResourceGetMappedPointer((void **)&pPos, &byteCount, graphicsResource);
+		if (error != cudaSuccess)
+		{
+			fprintf(gpLogFile, "STEP 2 FAILED\n");
+		}
+		launchCudaKernel(pPos, gMesh_Width, gMesh_Height, animationTime);
+		//fprintf(gpLogFile, "MeshWidth : %d  \t Mesh Height: %d\n", gMesh_Width, gMesh_Height);
+		error = cudaGraphicsUnmapResources(1, &graphicsResource, 0);
+		if (error != cudaSuccess)
+		{
+			fprintf(gpLogFile, "STEP 3 FAILED\n");
+		}
+	}
+	else
+	{
+		launchCPUKernel(gMesh_Width, gMesh_Height, animationTime);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE64 * sizeof(float), pos64, GL_DYNAMIC_DRAW);
+		if(k == 1)
+		glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE64 * sizeof(float), pos64, GL_DYNAMIC_DRAW);
+		if (k == 2)
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE128 * sizeof(float), pos128, GL_DYNAMIC_DRAW);
+		if (k == 3)
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE256 * sizeof(float), pos256, GL_DYNAMIC_DRAW);
+		if (k == 4)
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE512 * sizeof(float), pos512, GL_DYNAMIC_DRAW);
+		if (k == 5)
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE1024 * sizeof(float), pos1024, GL_DYNAMIC_DRAW);
+		if (k == 6)
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE2048 * sizeof(float), pos2048, GL_DYNAMIC_DRAW);
+		if (k == 7)
+			glBufferData(GL_ARRAY_BUFFER, MYARRAYSIZE4096 * sizeof(float), pos4096, GL_DYNAMIC_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+	}
+	if (bOnGPU == true)
+	{
+		glBindBuffer(GL_ARRAY_BUFFER, vbo_GPU);
+	}
+	else
+	{
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	}
+	glVertexAttribPointer(AMC_ATTRIBUTE_POSITION, 4, GL_FLOAT, GL_FALSE, 0, NULL);
+	glEnableVertexAttribArray(AMC_ATTRIBUTE_POSITION);
+
+	//declaration of matrices
+	mat4 modelViewMatrix;
+	mat4 modelViewProjectionMatrix;
+
+	// intialize above matrices to identity
+	modelViewMatrix = mat4::identity();
+	modelViewProjectionMatrix = mat4::identity();
+
+	// perform necessary transformations
+	modelViewMatrix = translate(0.0f, 0.0f, -1.5f);
+	// do necessary matrix multiplication
+	// this was internally done by glOrtho() in FFP.	
+
+	modelViewProjectionMatrix = perspectiveProjectionMatrix * modelViewMatrix;
+
+	// send necessary matrices to shader in respective uniforms
+	glUniformMatrix4fv(mvpUniform, 1, GL_FALSE, modelViewProjectionMatrix);
+	if(color == 1)
+	glUniform3f(ColorUniform, 1.0f, 0.0f, 0.0f);
+	//GL_FALSE = Should we transpose the matrix?
+	//DirectX is roj major so there we will have to transpose but OpenGL is Colomn major so no need to transpose. 
+	if(color == 2)
+		glUniform3f(ColorUniform, 0.0f, 0.0f, 1.0f);
+	if(color == 3)
+		glUniform3f(ColorUniform, 0.0f, 1.0f, 0.0f);
+	if(color == 4)
+		glUniform3f(ColorUniform, 1.0f, 1.0f, 0.0f);
+	if(color == 5)
+		glUniform3f(ColorUniform, 1.0, 0.5, 0.0);
+
+	if(color == 6)
+		glUniform3f(ColorUniform, 0.502, 0.000, 0.502);
+	if (color == 7)
+		glUniform3f(ColorUniform, 1.0f,1.0f,1.0f);
+
+
+	// bind with vao
+	//this will avoid many binding to vbo
+	
+	TCHAR str[255];
+	wsprintf(str, TEXT("OGL Programmable Pipeline Window : [Vertices = %d * %d  * 4]"), gMesh_Width,gMesh_Height);
+	SetWindowText(hwnd, str);
+	// bind with textures
+
+	// draw necessary scene
+	glDrawArrays(GL_POINTS, 0,64 * 64);
+	if(k == 1)
+	glDrawArrays(GL_POINTS, 0, 64 *64);
+	if(k == 2)
+	glDrawArrays(GL_POINTS, 0, 128 * 128);
+	if (k == 3)
+		glDrawArrays(GL_POINTS, 0, 256 * 256);
+	if (k == 4)
+		glDrawArrays(GL_POINTS, 0, 512 *512);
+	if (k == 5)
+		glDrawArrays(GL_POINTS, 0, 1024 * 1024);
+	if (k == 6)
+		glDrawArrays(GL_POINTS, 0, 2048 * 2048);
+	if (k == 7)
+		glDrawArrays(GL_POINTS, 0, 4096 * 4096);
+	//  0 =  From where to start in the array. 
+	// We have to start from 0th element i.e 0. if the 0th element would be 50.0f then we would have given the 2nd parameter as 50.
+	//3 = How many Vertices? 
+	//GL_TRIANGLES is the thing between glBegin() and glEnd()
+
+
+	// unbind vao
+	glBindVertexArray(0);
+
+	// unuse program
+	glUseProgram(0);
+	SwapBuffers(ghdc);
+	animationTime = animationTime + 0.01f;
+
+}
+void launchCPUKernel(unsigned int MeshWidth, unsigned int MeshHeight, float Time)
+{
+	for (int i = 0; i< MeshWidth; i++)
+	{
+		for (int j = 0; j < MeshHeight; j++)
+		{
+			for (int k = 0; k < 4; k++)
+			{
+				float u = i / (float)MeshWidth;
+				float v = j / (float)MeshHeight;
+				u = (u * 2.0) - 1.0;
+				v = (v * 2.0) - 1.0;
+				float frequency = 4.0;
+				float w = sinf(frequency * u + Time) * cosf(frequency * v + Time) * 0.5;
+				if (MeshWidth == 64)
+				{
+					if (k == 0)
+					{
+						pos64[i][j][k] = u;
+					}
+					if (k == 1)
+					{
+						pos64[i][j][k] = w;
+					}
+					if (k == 2)
+					{
+						pos64[i][j][k] = v;
+					}
+					if (k == 3)
+					{
+						pos64[i][j][k] = 1.0;
+					}
+				}
+				else if (MeshWidth == 128)
+				{
+					if (k == 0)
+					{
+						pos128[i][j][k] = u;
+					}
+					if (k == 1)
+					{
+						pos128[i][j][k] = w;
+					}
+					if (k == 2)
+					{
+						pos128[i][j][k] = v;
+					}
+					if (k == 3)
+					{
+						pos128[i][j][k] = 1.0;
+					}
+				}
+				else if (MeshWidth == 256)
+				{
+					if (k == 0)
+					{
+						pos256[i][j][k] = u;
+					}
+					if (k == 1)
+					{
+						pos256[i][j][k] = w;
+					}
+					if (k == 2)
+					{
+						pos256[i][j][k] = v;
+					}
+					if (k == 3)
+					{
+						pos256[i][j][k] = 1.0;
+					}
+				}
+				else if (MeshWidth == 512)
+				{
+					if (k == 0)
+					{
+						pos512[i][j][k] = u;
+					}
+					if (k == 1)
+					{
+						pos512[i][j][k] = w;
+					}
+					if (k == 2)
+					{
+						pos512[i][j][k] = v;
+					}
+					if (k == 3)
+					{
+						pos512[i][j][k] = 1.0;
+					}
+				}
+				else if (MeshWidth == 1024)
+				{
+					if (k == 0)
+					{
+						pos1024[i][j][k] = u;
+					}
+					if (k == 1)
+					{
+						pos1024[i][j][k] = w;
+					}
+					if (k == 2)
+					{
+						pos1024[i][j][k] = v;
+					}
+					if (k == 3)
+					{
+						pos1024[i][j][k] = 1.0;
+					}
+				}
+				else if (MeshWidth == 2048)
+				{
+					if (k == 0)
+					{
+						pos2048[i][j][k] = u;
+					}
+					if (k == 1)
+					{
+						pos2048[i][j][k] = w;
+					}
+					if (k == 2)
+					{
+						pos2048[i][j][k] = v;
+					}
+					if (k == 3)
+					{
+						pos2048[i][j][k] = 1.0;
+					}
+				}
+				else if (MeshWidth == 4096)
+				{
+				if (k == 0)
+				{
+					pos4096[i][j][k] = u;
+				}
+				if (k == 1)
+				{
+					pos4096[i][j][k] = w;
+				}
+				if (k == 2)
+				{
+					pos4096[i][j][k] = v;
+				}
+				if (k == 3)
+				{
+					pos4096[i][j][k] = 1.0;
+				}
+				}
+
+			}
+		}
+	}
+}
+void uninitialize(void)
+{
+	cudaGraphicsUnregisterResource(graphicsResource);
+	if (vbo)
+	{
+		glDeleteBuffers(1, &vbo);
+		vbo = 0;
+	}
+
+	if (vao)
+	{
+		glDeleteBuffers(1, &vao);
+		vao = 0;
+	}
+
+
+
+	if (gShaderProgramObject)
+	{
+		GLsizei shaderCount;
+		GLsizei shaderNumber;
+
+		glUseProgram(gShaderProgramObject);
+		glGetProgramiv(gShaderProgramObject, GL_ATTACHED_SHADERS, &shaderCount);
+
+		GLuint *pShaders = (GLuint *)malloc(sizeof(GLuint) * shaderCount);
+		if (pShaders)
+		{
+			glGetAttachedShaders(gShaderProgramObject, shaderCount, &shaderCount, pShaders);
+
+			for (shaderNumber = 0; shaderNumber < shaderCount; shaderNumber++)
+			{
+				// detach shader
+				glDetachShader(gShaderProgramObject, pShaders[shaderNumber]);
+
+				// delete shader
+				glDeleteShader(pShaders[shaderNumber]);
+				pShaders[shaderNumber] = 0;
+			}
+			free(pShaders);
+		}
+
+		glDeleteProgram(gShaderProgramObject);
+		gShaderProgramObject = 0;
+		glUseProgram(0);
+
+	}
+	if (gbIsFullScreen == true)
+	{
+		SetWindowLong(ghwnd, GWL_STYLE, gdwStyle | WS_OVERLAPPEDWINDOW);
+
+		SetWindowPlacement(ghwnd, &gwpprev);
+
+		SetWindowPos(ghwnd,
+			HWND_TOP,
+			0,
+			0,
+			0,
+			0,
+			SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOOWNERZORDER);
+		ShowCursor(TRUE);
+	}
+
+	if (wglGetCurrentContext() == ghglrc)
+	{
+		wglMakeCurrent(NULL, NULL);
+		if (ghglrc)
+		{
+			wglDeleteContext(ghglrc);
+			ghglrc = NULL;
+		}
+	}
+
+	if (ghdc)
+	{
+		ReleaseDC(ghwnd, ghdc);
+		ghdc = NULL;
+	}
+
+	if (gpLogFile)
+	{
+		fprintf_s(gpLogFile, "Log File Closed");
+		fclose(gpLogFile);
+	}
+}
+
+
+void ToggleFullScreen()
+{
+	MONITORINFO MI;
+
+	if (gbIsFullScreen == false)
+	{
+		gdwStyle = GetWindowLong(ghwnd, GWL_STYLE);
+
+		if (gdwStyle & WS_OVERLAPPEDWINDOW)
+		{
+			MI = { sizeof(MONITORINFO) };
+
+			if (
+				GetWindowPlacement(ghwnd, &gwpprev)
+				&&
+				GetMonitorInfo(MonitorFromWindow(ghwnd, MONITORINFOF_PRIMARY), &MI)
+				)
+			{
+				SetWindowLong(ghwnd, GWL_STYLE, gdwStyle & ~WS_OVERLAPPEDWINDOW);
+				SetWindowPos(ghwnd, HWND_TOP,
+					MI.rcMonitor.left,
+					MI.rcMonitor.top,
+					MI.rcMonitor.right - MI.rcMonitor.left,
+					MI.rcMonitor.bottom - MI.rcMonitor.top,
+					SWP_NOZORDER | WS_OVERLAPPED);
+			}
+		}
+		ShowCursor(FALSE);
+		gbIsFullScreen = true;
+	}
+	else
+	{
+		SetWindowLong(ghwnd, GWL_STYLE, gdwStyle | WS_OVERLAPPEDWINDOW);
+
+		SetWindowPlacement(ghwnd, &gwpprev);
+
+
+		SetWindowPos(ghwnd,
+			HWND_TOP,
+			0,
+			0,
+			0,
+			0,
+			SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOOWNERZORDER);
+		ShowCursor(TRUE);
+		gbIsFullScreen = false;
+	}
+
+}
+

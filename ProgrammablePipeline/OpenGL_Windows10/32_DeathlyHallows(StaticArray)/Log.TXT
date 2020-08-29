@@ -1,0 +1,4 @@
+Log File Created
+n : 1257
+Initialization successfull
+Log File Closed

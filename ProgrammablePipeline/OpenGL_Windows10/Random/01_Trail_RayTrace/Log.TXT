@@ -1,0 +1,7 @@
+Log File Created
+Height : 561.000000   Width 784.000000
+Height : 600.000000   Width 800.000000
+Initialization successfull
+Height : 1080.000000   Width 1920.000000
+Height : 561.000000   Width 784.000000
+Log File Closed

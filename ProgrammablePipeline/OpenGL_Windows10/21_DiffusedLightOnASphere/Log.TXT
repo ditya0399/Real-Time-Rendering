@@ -1,0 +1,4 @@
+Log File Created
+Initialization successfull
+The bool value is 0
+Log File Closed

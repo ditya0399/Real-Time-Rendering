@@ -1,0 +1,4 @@
+Log File Created
+The number of vertices are 2142
+Initialization successfull
+Log File Closed

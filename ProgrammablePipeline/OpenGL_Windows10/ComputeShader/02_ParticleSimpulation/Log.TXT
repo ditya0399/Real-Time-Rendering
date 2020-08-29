@@ -1,0 +1,4 @@
+Log File Created
+Value oof work group size is x : 256   y : 1  z : 1 
+ Initialization successfull
+Log File Closed

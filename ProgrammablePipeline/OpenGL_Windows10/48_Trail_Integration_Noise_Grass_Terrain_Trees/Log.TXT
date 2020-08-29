@@ -1,0 +1,5 @@
+Log File Created
+iRows : 256
+iCols : 256
+Initialization successfull
+Log File Closed

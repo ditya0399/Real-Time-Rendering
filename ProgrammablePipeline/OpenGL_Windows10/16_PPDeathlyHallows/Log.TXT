@@ -1,0 +1,4 @@
+Log File Created
+vALUE OF N IS 1257
+Initialization successfull
+Log File Closed

@@ -1,0 +1,6 @@
+Log File Created
+Initialization successfull
+Resize being called. I am in flag  == 1
+Resize being called. I am in flag  == 1
+Resize being called. I am in flag  == 1
+Log File Closed

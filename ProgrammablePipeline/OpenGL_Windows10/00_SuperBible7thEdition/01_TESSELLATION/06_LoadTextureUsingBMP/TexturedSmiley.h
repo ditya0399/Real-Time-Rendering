@@ -1,0 +1,6 @@
+#define IDBITMAP_SMILEY 101
+#define IDBITMAP_HEIGHTMAP 102
+
+
+
+

@@ -1,0 +1,139 @@
+#pragma once
+#include<string>
+#include<fstream>
+#include<sstream>
+#include<iostream>
+#include<vector> 
+
+#include<glew.h>    
+#include<gl/GL.h>
+
+#include"vmath.h"
+
+#include<assimp/Importer.hpp>
+#include<assimp/Scene.h>
+#include<assimp/postprocess.h>
+
+using namespace std;
+
+
+
+
+
+
+
+
+
+struct Vertex
+{
+	vmath::vec3 Position;
+	vmath::vec3 Normal;
+	vmath::vec2 TexCoords;
+	vmath::vec3 vColor;
+	
+};
+
+struct Texture
+{
+	GLuint id;
+	string type;
+	aiString path;
+};
+
+
+
+class Mesh
+{
+public:
+	vector<Vertex> vertices;
+	vector<GLuint> indices;
+	vector<Texture> textures;
+	vector<float> colors;
+
+	Mesh(vector<Vertex> vertices, vector<GLuint> indices, vector<Texture> textures,vector<float> colors)
+	{
+		this->vertices = vertices;
+		this->indices = indices;
+		this->textures = textures;
+		this->colors = colors;
+
+		this->SetupMesh();
+	}
+	void Draw(GLuint shaderProgramObject)
+	{
+		GLuint diffuseNr = 1;
+		GLuint specularNr = 1;
+		for (GLuint i = 0; i < this->textures.size(); i++)
+		{
+			glActiveTexture(GL_TEXTURE0 + i);
+			stringstream ss;
+			string number;
+			string name = this->textures[i].type;
+
+			if ("texture_diffuse" == name)
+			{
+				ss << diffuseNr++;
+			}
+			else if ("texture_specular" == name)
+			{
+				ss << specularNr++;
+			}
+
+
+			number = ss.str();
+			glUniform1i(glGetUniformLocation(shaderProgramObject, (name + number).c_str()), i);
+			glBindTexture(GL_TEXTURE_2D, this->textures[i].id);
+
+		}
+		glUniform1f(glGetUniformLocation(shaderProgramObject, "u_MaterialShininess"), 16.0f);
+		glUniform3fv(glGetUniformLocation(shaderProgramObject, "u_KAUniform"), 1, &this->colors[0]);
+		glUniform3fv(glGetUniformLocation(shaderProgramObject, "u_KDUniform"), 1, &this->colors[3]);
+		glUniform3fv(glGetUniformLocation(shaderProgramObject, "u_KSUniform"), 1, &this->colors[6]);
+	
+
+
+		glBindVertexArray(this->VAO);
+		glDrawElements(GL_TRIANGLES, this->indices.size(), GL_UNSIGNED_INT, 0);
+		glBindVertexArray(0);
+		for (GLuint i = 0; i < this->textures.size(); i++)
+		{
+			glActiveTexture(GL_TEXTURE0 + i);
+			glBindTexture(GL_TEXTURE_2D, 0);
+		}
+	}
+private:
+	GLuint VAO, VBO, EBO;
+
+	void SetupMesh()
+	{
+		glGenVertexArrays(1, &this->VAO);
+		glGenBuffers(1, &this->VBO);
+		glGenBuffers(1, &this->EBO);
+
+		glBindVertexArray(this->VAO);
+		glBindBuffer(GL_ARRAY_BUFFER, this->VBO);
+		glBufferData(GL_ARRAY_BUFFER, this->vertices.size() * sizeof(Vertex), &this->vertices[0], GL_STATIC_DRAW);
+		
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, this->EBO);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, this->indices.size() * sizeof(GLuint), &this->indices[0], GL_STATIC_DRAW);
+
+		//Vertex Positions
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid *)0);
+
+		//Vertex Normals
+		glEnableVertexAttribArray(1);
+		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid *)offsetof(Vertex, Normal));
+
+		//vertex Textures
+		glEnableVertexAttribArray(2);
+		glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid *)offsetof(Vertex, TexCoords));
+
+		//vertex Colors
+		glEnableVertexAttribArray(3);
+		glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (GLvoid *)offsetof(Vertex, vColor));
+
+		glBindVertexArray(0);
+
+	}	
+	};

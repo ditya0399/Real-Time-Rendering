@@ -1,0 +1,6 @@
+Log File Created
+The value of vertices is : 80
+n : 3142
+n : 1257
+Initialization successfull
+Log File Closed

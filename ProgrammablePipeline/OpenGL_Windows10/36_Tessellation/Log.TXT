@@ -1,0 +1,4 @@
+Log File Created
+Value of index is 112
+Initialization successfull
+Log File Closed

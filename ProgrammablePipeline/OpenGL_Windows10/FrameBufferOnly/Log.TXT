@@ -1,0 +1,4 @@
+Log File Created
+fbo status 36053
+Initialization successfull
+Log File Closed

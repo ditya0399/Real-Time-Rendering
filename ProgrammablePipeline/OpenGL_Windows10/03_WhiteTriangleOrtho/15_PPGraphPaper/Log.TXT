@@ -1,0 +1,64 @@
+Log File Created
+The value of 0 iFloat vertices are 0
+The value of j 1 and vertices are 0
+The value of k 3 and vertices are 0
+The value of 4 iFloat vertices are -1073741824
+The value of j 5 and vertices are 0
+The value of k 7 and vertices are 0
+The value of 8 iFloat vertices are -2147483648
+The value of j 9 and vertices are 0
+The value of k 11 and vertices are 0
+The value of 12 iFloat vertices are 1073741824
+The value of j 13 and vertices are 0
+The value of k 15 and vertices are 0
+The value of 16 iFloat vertices are 0
+The value of j 17 and vertices are 0
+The value of k 19 and vertices are 0
+The value of 20 iFloat vertices are -1610612736
+The value of j 21 and vertices are 0
+The value of k 23 and vertices are 0
+The value of 24 iFloat vertices are 1073741824
+The value of j 25 and vertices are 0
+The value of k 27 and vertices are 0
+The value of 28 iFloat vertices are -536870912
+The value of j 29 and vertices are 0
+The value of k 31 and vertices are 0
+The value of 32 iFloat vertices are 0
+The value of j 33 and vertices are 0
+The value of k 35 and vertices are 0
+The value of 36 iFloat vertices are 1610612736
+The value of j 37 and vertices are 0
+The value of k 39 and vertices are 0
+The value of 40 iFloat vertices are 0
+The value of j 41 and vertices are 0
+The value of k 43 and vertices are 0
+The value of 44 iFloat vertices are -536870912
+The value of j 45 and vertices are 0
+The value of k 47 and vertices are 0
+The value of 48 iFloat vertices are 1073741824
+The value of j 49 and vertices are 0
+The value of k 51 and vertices are 0
+The value of 52 iFloat vertices are -2147483648
+The value of j 53 and vertices are 0
+The value of k 55 and vertices are 0
+The value of 56 iFloat vertices are -536870912
+The value of j 57 and vertices are 0
+The value of k 59 and vertices are 0
+The value of 60 iFloat vertices are 536870912
+The value of j 61 and vertices are 0
+The value of k 63 and vertices are 0
+The value of 64 iFloat vertices are 1610612736
+The value of j 65 and vertices are 0
+The value of k 67 and vertices are 0
+The value of 68 iFloat vertices are -1610612736
+The value of j 69 and vertices are 0
+The value of k 71 and vertices are 0
+The value of 72 iFloat vertices are -536870912
+The value of j 73 and vertices are 0
+The value of k 75 and vertices are 0
+The value of 76 iFloat vertices are 536870912
+The value of j 77 and vertices are 0
+The value of k 79 and vertices are 0
+The value of vertices is : 81
+Initialization successfull
+Log File Closed

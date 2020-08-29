@@ -1,0 +1,2 @@
+Log file has been successfully created
+Log File Is Successfully Closed.
