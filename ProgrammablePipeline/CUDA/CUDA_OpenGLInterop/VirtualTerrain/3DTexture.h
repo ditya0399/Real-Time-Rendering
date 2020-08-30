@@ -1,0 +1,7 @@
+#define IDBITMAP_STONE 101
+#define IDBITMAP_VIJAY_KUNDALI 102
+
+
+
+
+
