@@ -29,6 +29,14 @@ enum
 	AMC_ATTRIBUTE_TEXCOORD0
 };
 
+
+float Red,RedTitle;
+float Green,GreenTitle;
+float Blue,BlueTitle;
+
+bool PresentsToggle = true;
+bool TitleToggle = true;
+
 //
 GLuint vao_triangle;
 GLuint vao_rectangle;
@@ -65,6 +73,7 @@ void update(void);
 void uninitialize(void);
 void initFreeType();
 void RenderText(std::string text, GLfloat x, GLfloat y, GLfloat scale, vmath::vec3 color);
+void FontColorAnimationUpdates();
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLine, int iCmdShow)
 {
 	int initialize(void);
@@ -120,7 +129,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLine
 		0);
 
 	ghwnd = hwnd;
-
+	
 	iRet = initialize();
 	if (iRet == -1)
 	{
@@ -146,11 +155,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLine
 	{
 		fprintf_s(gpLogFile, "Initialization successfull\n");
 	}
-
+	ToggleFullScreen();
 	ShowWindow(hwnd, iCmdShow);
 	UpdateWindow(hwnd);
 	SetFocus(hwnd);
-
+	
 	//gameloop
 	while (bIsDone == false)
 	{
@@ -790,64 +799,84 @@ void display(void)
 
 	// send necessary matrices to shader in respective uniforms
 	glUniformMatrix4fv(mvpUniform, 1, GL_FALSE, modelViewProjectionMatrix);
-	//GL_FALSE = Should we transpose the matrix?
-	//DirectX is roj major so there we will have to transpose but OpenGL is Colomn major so no need to transpose. 
+	
 
+	FontColorAnimationUpdates();
 
+	
 
-	// bind with vao
-
-	////////////////// TRIANGLE ////////////////////
-
-	//this will avoid many binding to vbo
-	//glBindVertexArray(vao_triangle);
-
-	//// bind with textures
-
-	//// draw necessary scene
-	//glDrawArrays(GL_TRIANGLES, 0, 12);
-	////  0 =  From where to start in the array. 
-	//// We have to start from 0th element i.e 0. if the 0th element would be 50.0f then we would have given the 2nd parameter as 50.
-	////3 = How many Vertices? 
-	////GL_TRIANGLES is the thing between glBegin() and glEnd()
-
-
-	//// unbind vao
-	//glBindVertexArray(0);
-
-	//////////  RECTANGLE //////////////
-	//modelViewMatrix = mat4::identity();
-	//modelViewProjectionMatrix = mat4::identity();
-	//RotationMatrix = mat4::identity();
-	//TranslateMatrix = mat4::identity();
-	//TranslateMatrix = translate(1.0f, 0.0f, -9.0f);
-	//RotationMatrix = rotate(angleRectangle, angleRectangle, angleRectangle);
-	//// perform necessary transformations
-	//modelViewMatrix = TranslateMatrix * RotationMatrix;
-	//modelViewProjectionMatrix = perspectiveProjectionMatrix * modelViewMatrix;
-
-	//glUniformMatrix4fv(mvpUniform, 1, GL_FALSE, modelViewProjectionMatrix);
-	//glBindVertexArray(vao_rectangle);
-	//glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-	//glDrawArrays(GL_TRIANGLE_FAN, 4, 4);
-	//glDrawArrays(GL_TRIANGLE_FAN, 8, 4);
-	//glDrawArrays(GL_TRIANGLE_FAN, 12, 4);
-	//glDrawArrays(GL_TRIANGLE_FAN, 16, 4);
-	//glDrawArrays(GL_TRIANGLE_FAN, 20, 4);
-	//glBindVertexArray(0);
-	// unuse program
-
-	RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(1.0f, 0.5f, 0.0f));
-	RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(1.0f, 0.5f, 0.0f));
-	RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(1.0f, 0.5f, 0.0f));
-	RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(1.0f, 0.5f, 0.0f));
-
+	
 	glUseProgram(0);
+
 	SwapBuffers(ghdc);
 	angleTriangle = angleTriangle + 0.2f;
 	angleRectangle = angleRectangle + 0.2f;
 }
 
+
+void FontColorAnimationUpdates()
+{
+	if (Red <= 1.0f && PresentsToggle)
+	{
+		RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(Red, Green, Blue));
+		RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+
+
+		Red += 0.00009f;
+		if (Green <= 0.5f)
+			Green += 0.000045f;
+	}
+	if (Red >= 1.0f)
+		PresentsToggle = false;
+
+	if (!PresentsToggle)
+	{
+
+		RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(Red, Green, Blue));
+		RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+
+		if (Red >= 0.0f)
+			Red -= 0.00009f;
+
+		if (Green >= 0.0f)
+			Green -= 0.000045f;
+
+		if (Red <= 0.0f)
+		{
+			if (RedTitle <= 1.0f && TitleToggle)
+			{
+				RenderText("Virtual Terrain", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+				RenderText("using", -8.0f, -1.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+				RenderText("3D Perlin Noise", -16.8f, -8.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+
+				RedTitle += 0.00009f;
+				if (GreenTitle <= 0.5f)
+					GreenTitle += 0.000045f;
+			}
+
+			if (RedTitle >= 1.0f)
+				TitleToggle = false;
+
+			if (!TitleToggle)
+			{
+				RenderText("Virtual Terrain", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+				RenderText("using", -8.0f, -1.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+				RenderText("3D Perlin Noise", -16.8f, -8.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+
+				if (RedTitle >= 0.0f)
+					RedTitle -= 0.00009f;
+
+				if (GreenTitle >= 0.0f)
+					GreenTitle -= 0.000045f;
+
+			}
+		}
+	}
+}
 void uninitialize(void)
 {
 	if (vbo_position_triangle)
