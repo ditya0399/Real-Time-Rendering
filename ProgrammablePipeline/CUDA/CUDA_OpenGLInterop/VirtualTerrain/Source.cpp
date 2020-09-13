@@ -331,9 +331,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 	case WM_MOUSEMOVE:
 
 		xPos = GET_X_LPARAM(lParam);
-		fprintf(gpLogFile, " X POSITION : %ld", xPos);
+		//fprintf(gpLogFile, " X POSITION : %ld", xPos);
 		yPos = GET_Y_LPARAM(lParam);
-		fprintf(gpLogFile, " Y POSITION : %ld", yPos);
+	//	fprintf(gpLogFile, " Y POSITION : %ld", yPos);
 
 
 
@@ -1178,7 +1178,7 @@ void launchCPUKernel(unsigned int MeshWidth, unsigned int MeshHeight, float Time
 				float yCur = start[1] + ((float)(i / MeshWidth)) * delta[1];
 				float w = fBmCPU(xCur, yCur, octaves, lacunarity, gain) + zOffset;
 
-					fprintf(gpLogFile, "divx.x : %f\t  div.y  : %f\n  ", xCur, yCur);
+					//fprintf(gpLogFile, "divx.x : %f\t  div.y  : %f\n  ", xCur, yCur);
 
 				w = (w > 0.0f) ? w : 0.0f; // don't show region underwater
 
