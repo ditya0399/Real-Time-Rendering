@@ -1,11 +1,16 @@
 #include<Windows.h>
 #include<glew.h>               // This SHOULD be above GL.h header.
 #include<gl/GL.h>
-
+#include <iostream>
+#include <map>
+#include <string>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 #include<stdio.h>
 #include"vmath.h"
 #pragma comment(lib,"opengl32.lib")//for linking
 #pragma comment(lib,"glew32.lib")//for linking
+#pragma comment(lib,"freetype.lib")//for linking
 
 
 int Win_Width = 800;
@@ -34,7 +39,14 @@ GLuint vbo_color_triangle;
 GLuint mvpUniform;
 mat4 perspectiveProjectionMatrix;
 
+struct Character {
+	unsigned int TextureID; // ID handle of the glyph texture
+	vmath::ivec2   Size;      // Size of glyph
+	vmath::ivec2   Bearing;   // Offset from baseline to left/top of glyph
+	unsigned int Advance;   // Horizontal offset to advance to next glyph
+};
 
+std::map<GLchar, Character> Characters;
 //
 
 HDC ghdc = NULL;
@@ -51,6 +63,8 @@ LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 void ToggleFullScreen(void);
 void update(void);
 void uninitialize(void);
+void initFreeType();
+void RenderText(std::string text, GLfloat x, GLfloat y, GLfloat scale, vmath::vec3 color);
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLine, int iCmdShow)
 {
 	int initialize(void);
@@ -286,17 +300,15 @@ int initialize(void)
 	const GLchar **p;
 	const GLchar *vertexShaderSourceCode =
 
-		"#version 430 core" \
-		"\n"
-		"in vec4 vPosition;" \
-		"in vec4 vColor;" \
-		"out vec4 out_color;" \
-		"uniform mat4 u_mvp_matrix;" \
-
-		"void main(void)" \
-		"{" \
-		"gl_Position = u_mvp_matrix * vPosition;" \
-		"out_color = vColor;" \
+		"#version 450 core"\
+		"\n"\
+		"in vec4 vPosition;"\
+		"out vec2 TexCoords;"\
+		"uniform mat4 u_mvp_matrix;"\
+		"void main()"\
+		"{"\
+		"gl_Position = u_mvp_matrix * vec4(vPosition.xy, 0.0, 1.0);"\
+		"TexCoords = vPosition.zw;"
 		"}";
 	// GPU will run the above code. And GPU WILL RUN FOR PER VERTEX. If there are 1000 vertex. Then GPU will run this shader for
 	//1000 times. We are Multiplying each vertex with the Model View Matrix.
@@ -343,16 +355,21 @@ int initialize(void)
 	gFragmentShaderObject = glCreateShader(GL_FRAGMENT_SHADER); //This command will create the Shader Object
 	//Now Write vertex shader code
 	const GLchar *fragmentShaderSourceCode =
-		"#version 430 core" \
-		"\n" \
-		"in vec4 out_color;" \
-		"out vec4 FragColor;" \
-
-		"void main(void)" \
-		"{" \
-		"FragColor =  out_color;" \
+		"#version 450 core"\
+		"\n"\
+		"in vec2 TexCoords;"\
+		"uniform float iTime;" \
+		"uniform vec3 iResolution;" \
+		"out vec4 color;"\
+		"uniform sampler2D text;"\
+		"uniform vec3 textColor;"\
+		"void main()"\
+		"{"\
+		
+		
+		"vec4 sampled = vec4(1.0,1.0,1.0,texture(text,TexCoords ).r);"\
+		"color = vec4(textColor, 1.0) *sampled;"\
 		"}";
-
 	//FragColor = vec4(1,1,1,1) = White Color
 	//this means here we are giving color to the Triangle.
 
@@ -542,17 +559,17 @@ int initialize(void)
 	//Basically we are giving the vertices coordinates in the above array
 	////////////////////FOR TRIANGLE ///////////////// 
 	//Create vao - Vertex array objects
+
+	initFreeType();
+
 	glGenVertexArrays(1, &vao_triangle);
 	glBindVertexArray(vao_triangle);
 	glGenBuffers(1, &vbo_position_triangle);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_position_triangle);
 	//in the above statement we have accesed the GL-ARRAY_BUFFER using vbo. Without it wouldn't be possible to get GL_ARRAY_BUFFER
 	//For the sake of understanding . GL_ARRAY_BUFFER is in the GPU side ad=nd we have bind our CPU side vbo with it like a Pipe to get the access.
-	glBufferData(GL_ARRAY_BUFFER, sizeof(triangleVertices), triangleVertices, GL_STATIC_DRAW);
-	//The above statement states that , we are passing our vertices array to the GPU and GL_STATIC_DRAW means draw it now only. Don't draw it in Runtime. 
-	//The below statement states that after storing the data in the GPU'S buffer . We are passing it to the vPosition now . 
-
-	glVertexAttribPointer(AMC_ATTRIBUTE_POSITION, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * 6 * 4, NULL, GL_DYNAMIC_DRAW);
+	glVertexAttribPointer(AMC_ATTRIBUTE_POSITION, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), NULL);
 	//GL_FALSE = We are not giving normalized coordinates as our coordinates are not converted in 0 - 1 range.
 	//3 = This is the thing I was talking about in initialize. Here, we are telling GPU to break our array in 3 parts . 
 	//0 and Null are for the Interleaved. 
@@ -605,7 +622,8 @@ int initialize(void)
 	glDepthFunc(GL_LEQUAL);
 	//initializing Perspective ProjectionMatrix to identity.
 	perspectiveProjectionMatrix = mat4::identity();
-
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	resize(Win_Width, Win_Height);
 
 	return(0);
@@ -643,7 +661,104 @@ void resize(int width, int height)
 
 }
 
+void initFreeType()
+{
+	FT_Library ft;
+	if (FT_Init_FreeType(&ft))
+		MessageBox(NULL, TEXT("ERROR::FREETYPE: Could Not init FreeType Library"), TEXT("ERROR"), MB_OK);
+	FT_Face face;
+	if (FT_New_Face(ft, "C:\\Windows\\Fonts\\Arial.ttf", 0, &face))
+		MessageBox(NULL, TEXT("ERROR::FREETYPE: Failed to load font"), TEXT("ERROR"), MB_OK);
+	FT_Set_Pixel_Sizes(face, 0, 48);
 
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+	for (GLubyte c = 0; c < 128; c++)
+	{
+		if (FT_Load_Char(face, c, FT_LOAD_RENDER))
+		{
+			MessageBox(NULL, TEXT("ERROR::FREETYPE: Failed to load Glyph"), TEXT("ERROR"), MB_OK);
+			continue;
+		}
+		GLuint texturePresents;
+		glGenTextures(1, &texturePresents);
+		glBindTexture(GL_TEXTURE_2D, texturePresents);
+		glTexImage2D(
+			GL_TEXTURE_2D,
+			0,
+			GL_RED,
+			face->glyph->bitmap.width,
+			face->glyph->bitmap.rows,
+			0,
+			GL_RED,
+			GL_UNSIGNED_BYTE,
+			face->glyph->bitmap.buffer
+		);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+		Character character = {
+			texturePresents,
+			vmath::ivec2(face->glyph->bitmap.width, face->glyph->bitmap.rows),
+			vmath::ivec2(face->glyph->bitmap_left, face->glyph->bitmap_top),
+			face->glyph->advance.x
+		};
+		Characters.insert(std::pair<GLchar, Character>(c, character));
+	}
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	FT_Done_Face(face);
+	FT_Done_FreeType(ft);
+
+}
+
+
+void RenderText(std::string text, GLfloat x, GLfloat y, GLfloat scale, vmath::vec3 color)
+{
+	glUniform3fv(glGetUniformLocation(gShaderProgramObject, "textColor"), 1, color);
+	glActiveTexture(GL_TEXTURE0);
+
+	glBindVertexArray(vao_triangle);
+	std::string::const_iterator c;
+	for (c = text.begin(); c != text.end(); c++)
+	{
+		Character ch = Characters[*c];
+
+		GLfloat xpos = x + ch.Bearing[0] * scale;
+		GLfloat ypos = y - (ch.Size[1] - ch.Bearing[1]) * scale;
+
+		GLfloat w = ch.Size[0] * scale;
+		GLfloat h = ch.Size[1] * scale;
+
+		GLfloat vertices[6][4] = {
+			{ xpos, ypos + h, 0.0, 0.0},
+			{ xpos, ypos,     0.0, 1.0},
+			{ xpos + w, ypos, 1.0, 1.0},
+			{ xpos, ypos + h, 0.0, 0.0},
+			{ xpos + w, ypos, 1.0, 1.0},
+			{ xpos + w, ypos + h, 1.0,0.0}
+		};
+
+		glBindTexture(GL_TEXTURE_2D, ch.TextureID);
+
+		glBindBuffer(GL_ARRAY_BUFFER, vbo_position_triangle);
+
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+
+		x += (ch.Advance >> 6) * scale;
+
+	}
+	glBindVertexArray(0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+}
 
 void display(void)
 {
@@ -664,10 +779,10 @@ void display(void)
 	modelViewProjectionMatrix = mat4::identity();
 	RotationMatrix = mat4::identity();
 	TranslateMatrix = mat4::identity();
-	TranslateMatrix = translate(-2.5f, 0.0f, -9.0f);
+	TranslateMatrix = translate(-2.5f, 0.0f, -55.0f);
 	RotationMatrix = rotate(angleTriangle, 0.0f, 1.0f, 0.0f);
 	// perform necessary transformations
-	modelViewMatrix = TranslateMatrix * RotationMatrix;
+	modelViewMatrix = TranslateMatrix ;
 	// do necessary matrix multiplication
 	// this was internally done by gluPerspective() in FFP.	
 
@@ -685,42 +800,48 @@ void display(void)
 	////////////////// TRIANGLE ////////////////////
 
 	//this will avoid many binding to vbo
-	glBindVertexArray(vao_triangle);
+	//glBindVertexArray(vao_triangle);
 
-	// bind with textures
+	//// bind with textures
 
-	// draw necessary scene
-	glDrawArrays(GL_TRIANGLES, 0, 12);
-	//  0 =  From where to start in the array. 
-	// We have to start from 0th element i.e 0. if the 0th element would be 50.0f then we would have given the 2nd parameter as 50.
-	//3 = How many Vertices? 
-	//GL_TRIANGLES is the thing between glBegin() and glEnd()
+	//// draw necessary scene
+	//glDrawArrays(GL_TRIANGLES, 0, 12);
+	////  0 =  From where to start in the array. 
+	//// We have to start from 0th element i.e 0. if the 0th element would be 50.0f then we would have given the 2nd parameter as 50.
+	////3 = How many Vertices? 
+	////GL_TRIANGLES is the thing between glBegin() and glEnd()
 
 
-	// unbind vao
-	glBindVertexArray(0);
+	//// unbind vao
+	//glBindVertexArray(0);
 
-	////////  RECTANGLE //////////////
-	modelViewMatrix = mat4::identity();
-	modelViewProjectionMatrix = mat4::identity();
-	RotationMatrix = mat4::identity();
-	TranslateMatrix = mat4::identity();
-	TranslateMatrix = translate(1.0f, 0.0f, -9.0f);
-	RotationMatrix = rotate(angleRectangle, angleRectangle, angleRectangle);
-	// perform necessary transformations
-	modelViewMatrix = TranslateMatrix * RotationMatrix;
-	modelViewProjectionMatrix = perspectiveProjectionMatrix * modelViewMatrix;
+	//////////  RECTANGLE //////////////
+	//modelViewMatrix = mat4::identity();
+	//modelViewProjectionMatrix = mat4::identity();
+	//RotationMatrix = mat4::identity();
+	//TranslateMatrix = mat4::identity();
+	//TranslateMatrix = translate(1.0f, 0.0f, -9.0f);
+	//RotationMatrix = rotate(angleRectangle, angleRectangle, angleRectangle);
+	//// perform necessary transformations
+	//modelViewMatrix = TranslateMatrix * RotationMatrix;
+	//modelViewProjectionMatrix = perspectiveProjectionMatrix * modelViewMatrix;
 
-	glUniformMatrix4fv(mvpUniform, 1, GL_FALSE, modelViewProjectionMatrix);
-	glBindVertexArray(vao_rectangle);
-	glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-	glDrawArrays(GL_TRIANGLE_FAN, 4, 4);
-	glDrawArrays(GL_TRIANGLE_FAN, 8, 4);
-	glDrawArrays(GL_TRIANGLE_FAN, 12, 4);
-	glDrawArrays(GL_TRIANGLE_FAN, 16, 4);
-	glDrawArrays(GL_TRIANGLE_FAN, 20, 4);
-	glBindVertexArray(0);
+	//glUniformMatrix4fv(mvpUniform, 1, GL_FALSE, modelViewProjectionMatrix);
+	//glBindVertexArray(vao_rectangle);
+	//glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+	//glDrawArrays(GL_TRIANGLE_FAN, 4, 4);
+	//glDrawArrays(GL_TRIANGLE_FAN, 8, 4);
+	//glDrawArrays(GL_TRIANGLE_FAN, 12, 4);
+	//glDrawArrays(GL_TRIANGLE_FAN, 16, 4);
+	//glDrawArrays(GL_TRIANGLE_FAN, 20, 4);
+	//glBindVertexArray(0);
 	// unuse program
+
+	RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(1.0f, 0.5f, 0.0f));
+	RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(1.0f, 0.5f, 0.0f));
+	RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(1.0f, 0.5f, 0.0f));
+	RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(1.0f, 0.5f, 0.0f));
+
 	glUseProgram(0);
 	SwapBuffers(ghdc);
 	angleTriangle = angleTriangle + 0.2f;

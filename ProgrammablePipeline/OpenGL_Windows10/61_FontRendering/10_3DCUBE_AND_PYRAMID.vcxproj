@@ -88,7 +88,11 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>D:\RTR\OpenGL-RTR Assignments and TryOuts\Assignments\ProgrammablePipeline\Windows10-64Bit\RTR\Real-Time-Rendering\ProgrammablePipeline\OpenGL_Windows10\61_FontRendering\include;D:\RTR\OpenGL-RTR Assignments and TryOuts\Assignments\ProgrammablePipeline\Windows10-64Bit\RTR\Real-Time-Rendering\ProgrammablePipeline\OpenGL_Windows10\61_FontRendering\include\freetype;C:\glew-2.1.0\include\GL;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>C:\glew-2.1.0\lib\Release\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
