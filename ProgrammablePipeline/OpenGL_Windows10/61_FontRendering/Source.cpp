@@ -1,4 +1,4 @@
-#include<Windows.h>
+﻿#include<Windows.h>
 #include<glew.h>               // This SHOULD be above GL.h header.
 #include<gl/GL.h>
 #include <iostream>
@@ -38,9 +38,9 @@ bool PresentsToggle = true;
 bool TitleToggle = true;
 
 //
-GLuint vao_triangle;
+GLuint vao_Text;
 GLuint vao_rectangle;
-GLuint vbo_position_triangle;
+GLuint vbo_position_Text;
 GLuint vbo_position_rectangle;
 GLuint vbo_color_rectangle;
 GLuint vbo_color_triangle;
@@ -571,10 +571,10 @@ int initialize(void)
 
 	initFreeType();
 
-	glGenVertexArrays(1, &vao_triangle);
-	glBindVertexArray(vao_triangle);
-	glGenBuffers(1, &vbo_position_triangle);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo_position_triangle);
+	glGenVertexArrays(1, &vao_Text);
+	glBindVertexArray(vao_Text);
+	glGenBuffers(1, &vbo_position_Text);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_position_Text);
 	//in the above statement we have accesed the GL-ARRAY_BUFFER using vbo. Without it wouldn't be possible to get GL_ARRAY_BUFFER
 	//For the sake of understanding . GL_ARRAY_BUFFER is in the GPU side ad=nd we have bind our CPU side vbo with it like a Pipe to get the access.
 	glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * 6 * 4, NULL, GL_DYNAMIC_DRAW);
@@ -730,7 +730,7 @@ void RenderText(std::string text, GLfloat x, GLfloat y, GLfloat scale, vmath::ve
 	glUniform3fv(glGetUniformLocation(gShaderProgramObject, "textColor"), 1, color);
 	glActiveTexture(GL_TEXTURE0);
 
-	glBindVertexArray(vao_triangle);
+	glBindVertexArray(vao_Text);
 	std::string::const_iterator c;
 	for (c = text.begin(); c != text.end(); c++)
 	{
@@ -753,7 +753,7 @@ void RenderText(std::string text, GLfloat x, GLfloat y, GLfloat scale, vmath::ve
 
 		glBindTexture(GL_TEXTURE_2D, ch.TextureID);
 
-		glBindBuffer(GL_ARRAY_BUFFER, vbo_position_triangle);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo_position_Text);
 
 		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
 
@@ -879,16 +879,16 @@ void FontColorAnimationUpdates()
 }
 void uninitialize(void)
 {
-	if (vbo_position_triangle)
+	if (vbo_position_Text)
 	{
-		glDeleteBuffers(1, &vbo_position_triangle);
-		vbo_position_triangle = 0;
+		glDeleteBuffers(1, &vbo_position_Text);
+		vbo_position_Text = 0;
 	}
 
-	if (vao_triangle)
+	if (vao_Text)
 	{
-		glDeleteBuffers(1, &vao_triangle);
-		vao_triangle = 0;
+		glDeleteBuffers(1, &vao_Text);
+		vao_Text = 0;
 	}
 	if (vbo_position_rectangle)
 	{

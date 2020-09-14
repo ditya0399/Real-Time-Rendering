@@ -89,7 +89,7 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\glew-2.1.0\include\GL;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\glew-2.1.0\include\GL;D:\RTR\OpenGL-RTR Assignments and TryOuts\Assignments\ProgrammablePipeline\Windows10-64Bit\RTR\Real-Time-Rendering\ProgrammablePipeline\CUDA\CUDA_OpenGLInterop\VirtualTerrain\include\freetype;D:\RTR\OpenGL-RTR Assignments and TryOuts\Assignments\ProgrammablePipeline\Windows10-64Bit\RTR\Real-Time-Rendering\ProgrammablePipeline\CUDA\CUDA_OpenGLInterop\VirtualTerrain\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalLibraryDirectories>C:\glew-2.1.0\lib\Release\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>

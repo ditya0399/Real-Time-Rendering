@@ -4,10 +4,16 @@
 #include<stdio.h>
 #include<time.h>
 #include<windowsx.h>
+#include <iostream>
+#include <map>
+#include <string>
+#include <ft2build.h>
+#include FT_FREETYPE_H
 #include"vmath.h"
 #include"3DTexture.h"
 #pragma comment(lib,"opengl32.lib")//for linking
 #pragma comment(lib,"glew32.lib")//for linking
+#pragma comment(lib,"FreeType.lib")//for linking
 
 
 
@@ -17,6 +23,30 @@
 #include"inc/helper_cuda.h"
 #include"inc/helper_timer.h"
 #pragma comment(lib,"cudart.lib")
+
+
+//Variables for font rendering 
+
+float Red, RedTitle;
+float Green, GreenTitle;
+float Blue, BlueTitle;
+
+bool PresentsToggle = true;
+bool TitleToggle = true;
+GLuint vao_Text;
+GLuint vbo_position_Text;
+GLuint gShaderProgramObjectFont;
+struct Character{
+	unsigned int TextureID; // ID handle of the glyph texture
+	vmath::ivec2   Size;      // Size of glyph
+	vmath::ivec2   Bearing;   // Offset from baseline to left/top of glyph
+	unsigned int Advance;   // Horizontal offset to advance to next glyph
+};
+
+std::map<GLchar, Character> Characters;
+
+
+//
 
 #define Z_PLANE 50.0f
 
@@ -169,6 +199,7 @@ GLuint vao;
 GLuint vbo;
 //GLuint vbo_GPU;
 GLuint mvpUniform;
+GLuint mvpUniformFont;
 mat4 perspectiveProjectionMatrix;
 
 float uData[1], vData[1];
@@ -185,6 +216,10 @@ bool gbIsActiveWindow = false;
 bool gbIsFullScreen = false;
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
+void RenderText(std::string text, GLfloat x, GLfloat y, GLfloat scale, vmath::vec3 color);
+void FontColorAnimationUpdates();
+void initFreeType();
+void initializeFontShaders();
 void ToggleFullScreen(void);
 void update(void);
 void uninitialize(void);
@@ -921,8 +956,12 @@ int initialize(void)
 
 
 	glBindVertexArray(0);
+
+
+
 	LoadGLTextures(&gTextureStone, MAKEINTRESOURCE(IDBITMAP_STONE));
 
+	initializeFontShaders();
 	//Depth Lines
 	glClearDepth(1.0f);
 	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -936,7 +975,205 @@ int initialize(void)
 
 	return(0);
 }
+void initializeFontShaders()
+{
+	GLuint gVertexShaderObject;
+	GLuint gFragmentShaderObject;
 
+	//Define Vertex Shader Object
+	gVertexShaderObject = glCreateShader(GL_VERTEX_SHADER); //This command will create the Shader Object
+	//Now Write vertex shader code
+	const GLchar **p;
+	const GLchar *vertexShaderSourceCode =
+
+		"#version 450 core"\
+		"\n"\
+		"in vec4 vPosition;"\
+		"out vec2 TexCoords;"\
+		"uniform mat4 u_mvp_matrix;"\
+		"void main()"\
+		"{"\
+		"gl_Position = u_mvp_matrix * vec4(vPosition.xy, 0.0, 1.0);"\
+		"TexCoords = vPosition.zw;"
+		"}";
+	// GPU will run the above code. And GPU WILL RUN FOR PER VERTEX. If there are 1000 vertex. Then GPU will run this shader for
+	//1000 times. We are Multiplying each vertex with the Model View Matrix.
+	//And how does the GPU gets to know about at what offset the array has to be taken . Go to glVertexAttribPointer() in Display.
+	// in = Input. 
+
+	//p = &vertexShaderSourceCode;
+		//Specify above source code to the vertex shader object
+	glShaderSource(gVertexShaderObject, 1, (const GLchar **)&vertexShaderSourceCode, NULL);
+
+	//Compile the vertex shader 
+	glCompileShader(gVertexShaderObject);
+
+	//////////////// Error Checking//////////////////
+	//Code for catching the errors 
+	GLint iShaderCompileStatus = 0;
+	GLint iInfoLogLength = 0;
+	GLchar *szInfoLog = NULL;
+
+
+	glGetShaderiv(gVertexShaderObject, GL_COMPILE_STATUS, &iShaderCompileStatus);
+	if (iShaderCompileStatus == GL_FALSE)
+	{
+		glGetShaderiv(gVertexShaderObject, GL_INFO_LOG_LENGTH, &iInfoLogLength);
+		if (iInfoLogLength > 0)
+		{
+			szInfoLog = (GLchar *)malloc(iInfoLogLength);
+			if (szInfoLog != NULL)
+			{
+				GLsizei written;
+				glGetShaderInfoLog(gVertexShaderObject, iInfoLogLength, &written, szInfoLog);
+				fprintf(gpLogFile, "%s\n", szInfoLog);
+				free(szInfoLog);
+				uninitialize();
+				DestroyWindow(hwnd);
+				exit(0);
+
+
+			}
+		}
+	}
+	/////////////////    F R A G M E N T S H A D E R            //////////////////////////
+	//Define Vertex Shader Object
+	gFragmentShaderObject = glCreateShader(GL_FRAGMENT_SHADER); //This command will create the Shader Object
+	//Now Write vertex shader code
+	const GLchar *fragmentShaderSourceCode =
+		"#version 450 core"\
+		"\n"\
+		"in vec2 TexCoords;"\
+		"uniform float iTime;" \
+		"uniform vec3 iResolution;" \
+		"out vec4 color;"\
+		"uniform sampler2D text;"\
+		"uniform vec3 textColor;"\
+		"void main()"\
+		"{"\
+
+
+		"vec4 sampled = vec4(1.0,1.0,1.0,texture(text,TexCoords ).r);"\
+		"color = vec4(textColor, 1.0) *sampled;"\
+		"}";
+	//FragColor = vec4(1,1,1,1) = White Color
+	//this means here we are giving color to the Triangle.
+
+
+
+
+	//Specify above source code to the vertex shader object
+	glShaderSource(gFragmentShaderObject, 1, (const GLchar **)&fragmentShaderSourceCode, NULL);
+
+	//Compile the vertex shader 
+	glCompileShader(gFragmentShaderObject);
+	//Code for catching the errors 
+		   /*iShaderCompileStatus = 0;
+		   iInfoLogLength = 0;*/
+	szInfoLog = NULL;
+
+
+	glGetShaderiv(gFragmentShaderObject, GL_COMPILE_STATUS, &iShaderCompileStatus);
+	if (iShaderCompileStatus == GL_FALSE)
+	{
+		glGetShaderiv(gFragmentShaderObject, GL_INFO_LOG_LENGTH, &iInfoLogLength);
+		if (iInfoLogLength > 0)
+		{
+			szInfoLog = (GLchar *)malloc(iInfoLogLength);
+			if (szInfoLog != NULL)
+			{
+				GLsizei written1;
+				glGetShaderInfoLog(gFragmentShaderObject, iInfoLogLength, &written1, szInfoLog);
+				fprintf(gpLogFile, "%s\n", szInfoLog);
+				free(szInfoLog);
+				uninitialize();
+				DestroyWindow(hwnd);
+				exit(0);
+
+
+			}
+		}
+	}
+	// CREATE SHADER PROGRAM OBJECT
+	gShaderProgramObjectFont = glCreateProgram();
+	//attach vertex shader to the gShaderProgramObjectFont
+	glAttachShader(gShaderProgramObjectFont, gVertexShaderObject);
+
+	//attach fragment shader to the gShaderProgramObjectFont
+	glAttachShader(gShaderProgramObjectFont, gFragmentShaderObject);
+
+
+	//Pre-Linking  binding to vertexAttributes
+	glBindAttribLocation(gShaderProgramObjectFont, AMC_ATTRIBUTE_POSITION, "vPosition");
+	glBindAttribLocation(gShaderProgramObjectFont, AMC_ATTRIBUTE_COLOR, "vColor");
+	//Here the above line means that we are linking the GPU's variable vPosition with the CPU's  enum member  i.e AMC_ATTRIBUTE_POSITION .
+	//So whatever changes will be done in AMC_ATTRIBUTE_POSITION , those will also reflect in vPosition
+
+	//RULE : ALWAYS BIND THE ATTRIBUTES BEFORE LINKING AND BIND THE UNIFORM AFTER LINKING.
+
+	//Link the shader program 
+	glLinkProgram(gShaderProgramObjectFont);
+
+	//Code for catching the errors 
+	GLint iProgramLinkStatus = 0;
+
+
+
+	glGetProgramiv(gShaderProgramObjectFont, GL_LINK_STATUS, &iProgramLinkStatus);
+	if (iProgramLinkStatus == GL_FALSE)
+	{
+		glGetProgramiv(gShaderProgramObjectFont, GL_INFO_LOG_LENGTH, &iInfoLogLength);
+		if (iInfoLogLength > 0)
+		{
+			szInfoLog = (GLchar *)malloc(iInfoLogLength);
+			if (szInfoLog != NULL)
+			{
+				GLsizei written3;
+				glGetProgramInfoLog(gShaderProgramObjectFont, iInfoLogLength, &written3, szInfoLog);
+				fprintf(gpLogFile, "%s\n", szInfoLog);
+				free(szInfoLog);
+				uninitialize();
+				DestroyWindow(hwnd);
+				exit(0);
+
+
+			}
+		}
+	}
+
+
+	//POST Linking
+	//Retrieving uniform locations 
+	mvpUniformFont = glGetUniformLocation(gShaderProgramObjectFont, "u_mvp_matrix");
+	//Here we have done all the preparations of data transfer from CPU to GPU
+
+	
+	initFreeType();
+
+	glGenVertexArrays(1, &vao_Text);
+	glBindVertexArray(vao_Text);
+	glGenBuffers(1, &vbo_position_Text);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_position_Text);
+	//in the above statement we have accesed the GL-ARRAY_BUFFER using vbo. Without it wouldn't be possible to get GL_ARRAY_BUFFER
+	//For the sake of understanding . GL_ARRAY_BUFFER is in the GPU side ad=nd we have bind our CPU side vbo with it like a Pipe to get the access.
+	glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat) * 6 * 4, NULL, GL_DYNAMIC_DRAW);
+	glVertexAttribPointer(AMC_ATTRIBUTE_POSITION, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), NULL);
+	//GL_FALSE = We are not giving normalized coordinates as our coordinates are not converted in 0 - 1 range.
+	//3 = This is the thing I was talking about in initialize. Here, we are telling GPU to break our array in 3 parts . 
+	//0 and Null are for the Interleaved. 
+	//GL_FLOAT- What is the type? .
+	//AMC_ATTRIBUTE_POSITION. here we are passing data to vPosition. 
+
+	glEnableVertexAttribArray(AMC_ATTRIBUTE_POSITION);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	
+
+	glBindVertexArray(0);
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+}
 void resize(int width, int height)
 {
 
@@ -968,17 +1205,186 @@ void resize(int width, int height)
 		100.0f);
 
 }
-
-
-
-void display(void)
+void initFreeType()
 {
-	end_t = clock();
-	deltaTime = end_t - lastFrame;
-	lastFrame = end_t;
+	FT_Library ft;
+	if (FT_Init_FreeType(&ft))
+		MessageBox(NULL, TEXT("ERROR::FREETYPE: Could Not init FreeType Library"), TEXT("ERROR"), MB_OK);
+	FT_Face face;
+	if (FT_New_Face(ft, "C:\\Windows\\Fonts\\Arial.ttf", 0, &face))
+		MessageBox(NULL, TEXT("ERROR::FREETYPE: Failed to load font"), TEXT("ERROR"), MB_OK);
+	FT_Set_Pixel_Sizes(face, 0, 48);
+
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+	for (GLubyte c = 0; c < 128; c++)
+	{
+		if (FT_Load_Char(face, c, FT_LOAD_RENDER))
+		{
+			MessageBox(NULL, TEXT("ERROR::FREETYPE: Failed to load Glyph"), TEXT("ERROR"), MB_OK);
+			continue;
+		}
+		GLuint texturePresents;
+		glGenTextures(1, &texturePresents);
+		glBindTexture(GL_TEXTURE_2D, texturePresents);
+		glTexImage2D(
+			GL_TEXTURE_2D,
+			0,
+			GL_RED,
+			face->glyph->bitmap.width,
+			face->glyph->bitmap.rows,
+			0,
+			GL_RED,
+			GL_UNSIGNED_BYTE,
+			face->glyph->bitmap.buffer
+		);
+
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+		Character character = {
+			texturePresents,
+			vmath::ivec2(face->glyph->bitmap.width, face->glyph->bitmap.rows),
+			vmath::ivec2(face->glyph->bitmap_left, face->glyph->bitmap_top),
+			face->glyph->advance.x
+		};
+		Characters.insert(std::pair<GLchar, Character>(c, character));
+	}
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	FT_Done_Face(face);
+	FT_Done_FreeType(ft);
+
+}
 
 
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+void RenderText(std::string text, GLfloat x, GLfloat y, GLfloat scale, vmath::vec3 color)
+{
+	glUniform3fv(glGetUniformLocation(gShaderProgramObjectFont, "textColor"), 1, color);
+	glActiveTexture(GL_TEXTURE0);
+
+	glBindVertexArray(vao_Text);
+	std::string::const_iterator c;
+	for (c = text.begin(); c != text.end(); c++)
+	{
+		Character ch = Characters[*c];
+
+		GLfloat xpos = x + ch.Bearing[0] * scale;
+		GLfloat ypos = y - (ch.Size[1] - ch.Bearing[1]) * scale;
+
+		GLfloat w = ch.Size[0] * scale;
+		GLfloat h = ch.Size[1] * scale;
+
+		GLfloat vertices[6][4] = {
+			{ xpos, ypos + h, 0.0, 0.0},
+			{ xpos, ypos,     0.0, 1.0},
+			{ xpos + w, ypos, 1.0, 1.0},
+			{ xpos, ypos + h, 0.0, 0.0},
+			{ xpos + w, ypos, 1.0, 1.0},
+			{ xpos + w, ypos + h, 1.0,0.0}
+		};
+
+		glBindTexture(GL_TEXTURE_2D, ch.TextureID);
+
+		glBindBuffer(GL_ARRAY_BUFFER, vbo_position_Text);
+
+		glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+		glDrawArrays(GL_TRIANGLES, 0, 6);
+
+		x += (ch.Advance >> 6) * scale;
+
+	}
+	glBindVertexArray(0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+}
+
+
+void displayFont()
+{
+	glUseProgram(gShaderProgramObjectFont);
+
+	//declaration of matrices
+	mat4 modelViewMatrix;
+	mat4 modelViewProjectionMatrix;
+	mat4 RotationMatrix;
+	mat4 TranslateMatrix;
+	// intialize above matrices to identity
+	modelViewMatrix = mat4::identity();
+	modelViewProjectionMatrix = mat4::identity();
+	RotationMatrix = mat4::identity();
+	TranslateMatrix = mat4::identity();
+	TranslateMatrix = translate(-2.5f, 0.0f, -55.0f);
+
+	// perform necessary transformations
+	modelViewMatrix = TranslateMatrix;
+	// do necessary matrix multiplication
+	// this was internally done by gluPerspective() in FFP.	
+
+	modelViewProjectionMatrix = perspectiveProjectionMatrix * modelViewMatrix;
+
+	// send necessary matrices to shader in respective uniforms
+	glUniformMatrix4fv(mvpUniformFont, 1, GL_FALSE, modelViewProjectionMatrix);
+	//	RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(1.0f, Green, Blue));
+
+	FontColorAnimationUpdates();
+
+
+
+	// unuse program
+	glUseProgram(0);
+}
+void displayCPUAndGPUFont()
+{
+	glUseProgram(gShaderProgramObjectFont);
+
+	//declaration of matrices
+	mat4 modelViewMatrix;
+	mat4 modelViewProjectionMatrix;
+	mat4 RotationMatrix;
+	mat4 TranslateMatrix;
+	// intialize above matrices to identity
+	modelViewMatrix = mat4::identity();
+	modelViewProjectionMatrix = mat4::identity();
+	RotationMatrix = mat4::identity();
+	TranslateMatrix = mat4::identity();
+	TranslateMatrix = translate(-2.5f, 0.0f, -55.0f);
+
+	// perform necessary transformations
+	modelViewMatrix = TranslateMatrix;
+	// do necessary matrix multiplication
+	// this was internally done by gluPerspective() in FFP.	
+
+	modelViewProjectionMatrix = perspectiveProjectionMatrix * modelViewMatrix;
+
+	// send necessary matrices to shader in respective uniforms
+	glUniformMatrix4fv(mvpUniformFont, 1, GL_FALSE, modelViewProjectionMatrix);
+	//	RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(1.0f, Green, Blue));
+
+	if (bOnGPU == false)
+	{
+		RenderText("CPU", 33.0f, 18.0f, 0.1f, vmath::vec3(1.0f, 1.0f, 0.0f));
+	}
+	else
+	{
+		RenderText("GPU", 33.0f, 18.0f, 0.1f, vmath::vec3(0.0f, 1.0f, 0.0f));
+	}
+
+
+
+	// unuse program
+	glUseProgram(0);
+}
+void displayCudaAndCpu()
+{
+	void displayCPUAndGPUFont();
+
+	displayCPUAndGPUFont();
 	glUseProgram(gShaderProgramObject);
 
 	float4 *pPos = NULL;
@@ -1061,7 +1467,6 @@ void display(void)
 
 	viewMatrix = lookat(cameraPos,cameraPos + cameraFront,cameraUp);
 
-
 	// intialize above matrices to identity
 	modelViewMatrix = mat4::identity();
 	modelViewProjectionMatrix = mat4::identity();
@@ -1086,7 +1491,7 @@ void display(void)
 	// bind with textures
 
 	// draw necessary scene
-	glDrawArrays(GL_LINE_STRIP, 0, gMesh_Width * gMesh_Height*4);
+	glDrawArrays(GL_POINTS, 0, gMesh_Width * gMesh_Height*4);
 	
 	glBindVertexArray(0);
 
@@ -1094,14 +1499,102 @@ void display(void)
 		sin(vmath::radians(pitch)),
 		cos(vmath::radians(pitch))*sin(vmath::radians(yaw)));
 
-
 	cameraFront = vmath::normalize(front);
-	// unuse program
+
 	glUseProgram(0);
+}
+
+void display(void)
+{
+	void displayFont();
+	
+	end_t = clock();
+	deltaTime = end_t - lastFrame;
+	lastFrame = end_t;
+
+
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	
+	displayFont();
+
+
 	SwapBuffers(ghdc);
 	animationTime = animationTime + 0.01f;
 
 }
+
+void FontColorAnimationUpdates()
+{
+	void displayCudaAndCpu();
+
+
+	if (Red <= 1.0f && PresentsToggle)
+	{
+		RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(Red, Green, Blue));
+		RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+
+
+		Red += 0.00009f;
+		if (Green <= 0.5f)
+			Green += 0.000045f;
+	}
+	if (Red >= 1.0f)
+		PresentsToggle = false;
+
+	if (!PresentsToggle)
+	{
+
+		RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(Red, Green, Blue));
+		RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+
+		if (Red >= 0.0f)
+			Red -= 0.00009f;
+
+		if (Green >= 0.0f)
+			Green -= 0.000045f;
+
+		if (Red <= 0.0f)
+		{
+			if (RedTitle <= 1.0f && TitleToggle)
+			{
+				RenderText("Virtual Terrain", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+				RenderText("using", -8.0f, -1.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+				RenderText("3D Perlin Noise", -16.8f, -8.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+
+				RedTitle += 0.00009f;
+				if (GreenTitle <= 0.5f)
+					GreenTitle += 0.000045f;
+			}
+
+			if (RedTitle >= 1.0f)
+				TitleToggle = false;
+
+			if (!TitleToggle)
+			{
+				RenderText("Virtual Terrain", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+				RenderText("using", -8.0f, -1.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+				RenderText("3D Perlin Noise", -16.8f, -8.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+
+				if (RedTitle >= 0.0f)
+					RedTitle -= 0.00009f;
+
+				if (GreenTitle >= 0.0f)
+					GreenTitle -= 0.000045f;
+
+			}
+			if (RedTitle <= 0.0f)
+			{
+				displayCudaAndCpu();
+			}
+		}
+	}
+}
+
 void launchCPUKernel(unsigned int MeshWidth, unsigned int MeshHeight, float Time)
 {
 	/*for (int i = 0; i< MeshWidth; i++)
@@ -1202,10 +1695,12 @@ void launchCPUKernel(unsigned int MeshWidth, unsigned int MeshHeight, float Time
 	ToggleCPU = false;
 }
 
-
 int permCPU(int i) { return(h_perm[i & 0xff]); }
+
 float fadeCPU(float t) { return t * t * t * (t * (t * 6.f - 15.f) + 10.f); }
+
 float lerpPCPU(float t, float a, float b) { return a + t * (b - a); }
+
 float gradCPU(int hash, float x, float y, float z)
 {
 	//int h = hash & 15;                      // CONVERT LO 4 BITS OF HASH CODE
@@ -1252,6 +1747,7 @@ float gradCPU(int hash, float x, float y, float z)
 	default: return 0; // never happens
 	}
 }
+
 void uninitialize(void)
 {
 	cudaGraphicsUnregisterResource(graphicsResource);
