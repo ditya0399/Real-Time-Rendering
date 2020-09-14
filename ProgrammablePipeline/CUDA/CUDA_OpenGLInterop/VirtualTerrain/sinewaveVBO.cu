@@ -130,7 +130,7 @@ __device__ inline uchar4 colorElevation(float texHeight)
 	else if (texHeight < -0.2500f) pos = make_uchar4(000, 000, 255, 255); //shallow
 	else if (texHeight < 0.0000f) pos = make_uchar4(000, 128, 255, 255); //shore
 	else if (texHeight < 0.0125f) pos = make_uchar4(240, 240, 064, 255); //sand
-	else if (texHeight < 0.1250f) pos = make_uchar4(032, 160, 000, 255); //grass
+	else if (texHeight < 0.1250f) pos = make_uchar4(032, 260, 000, 255); //grass
 	else if (texHeight < 0.3750f) pos = make_uchar4(224, 224, 000, 255); //dirt
 	else if (texHeight < 0.7500f) pos = make_uchar4(128, 128, 128, 255); //rock
 	else                          pos = make_uchar4(255, 255, 255, 255); //snow
@@ -175,8 +175,8 @@ __global__ void k_perlin(float4* pos, uchar4 *colorPos,
 		float u = ((float)(idx%width)) / (float)width;
 		float v = ((float)(idx / width)) / (float)height;
 
-		u = u * 2.f - 1.f;
-		v = v * 2.f - 1.f;
+		u = u * 2.f - 1.0f;
+		v = v * 2.f - 1.0f;
 
 		w = (w > 0.f) ? w : 0.f; // don't show region underwater
 		//w = 0;

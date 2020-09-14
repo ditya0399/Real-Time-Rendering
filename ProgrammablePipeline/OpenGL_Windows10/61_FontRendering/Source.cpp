@@ -877,6 +877,8 @@ void FontColorAnimationUpdates()
 		}
 	}
 }
+
+
 void uninitialize(void)
 {
 	if (vbo_position_Text)

@@ -106,8 +106,8 @@ GLuint vbo_GPU_Colors;
 struct cudaGraphicsResource *graphicsResourceColor = NULL;
 
 
-float positions[256 *256 *4];
-float Colors[256 *256 *4];
+float positions[gMesh_Height *gMesh_Height *4];
+float Colors[gMesh_Width *gMesh_Height][4];
 float Textures[256 *256] [2];
 
 
@@ -197,6 +197,7 @@ enum
 //
 GLuint vao;
 GLuint vbo;
+GLuint vbo_Color_CPU;
 //GLuint vbo_GPU;
 GLuint mvpUniform;
 GLuint mvpUniformFont;
@@ -659,10 +660,10 @@ int initialize(void)
 		"#version 430 core" \
 		"\n"
 		"in vec4 vPosition;" \
-		"in mat4 vColor;" \
+		"in vec4 vColor;" \
 		"in vec2 vTexCoord;" \
 		"out vec2 outTexCoord;" \
-		"out mat4 out_Color;" \
+		"out vec4 out_Color;" \
 		"uniform mat4 u_mvp_matrix;" \
 		
 		"void main(void)" \
@@ -718,8 +719,8 @@ int initialize(void)
 	const GLchar *fragmentShaderSourceCode =
 		"#version 430 core" \
 		"\n" \
-		"out mat4 FragColor;" \
-		"in mat4 out_Color;" \
+		"out vec4 FragColor;" \
+		"in vec4 out_Color;" \
 		"in vec2 outTexCoord;" \
 		"uniform sampler2D u_texture_sampler;" \
 		
@@ -916,21 +917,23 @@ int initialize(void)
 	glBindVertexArray(vao);
 	glGenBuffers(1, &vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+
+	glBufferData(GL_ARRAY_BUFFER, gMesh_Width * gMesh_Height *4 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+	glVertexAttribPointer(AMC_ATTRIBUTE_POSITION, 4, GL_FLOAT, GL_FALSE, 0, NULL);
+	glEnableVertexAttribArray(AMC_ATTRIBUTE_POSITION);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	
+
+
+	glGenBuffers(1, &vbo_Color_CPU);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_Color_CPU);
 	//in the above statement we have accesed the GL-ARRAY_BUFFER using vbo. Without it wouldn't be possible to get GL_ARRAY_BUFFER
 	//For the sake of understanding . GL_ARRAY_BUFFER is in the GPU side ad=nd we have bind our CPU side vbo with it like a Pipe to get the access.
-	glBufferData(GL_ARRAY_BUFFER, gMesh_Width * gMesh_Height *4 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
-	//The above statement states that , we are passing our vertices array to the GPU and GL_STATIC_DRAW means draw it now only. Don't draw it in Runtime. 
-	//The below statement states that after storing the data in the GPU'S buffer . We are passing it to the vPosition now . 
-
-	//glVertexAttribPointer(AMC_ATTRIBUTE_POSITION, 3, GL_FLOAT, GL_FALSE, 0, NULL);
-	////GL_FALSE = We are not giving normalized coordinates as our coordinates are not converted in 0 - 1 range.
-	////3 = This is the thing I was talking about in initialize. Here, we are telling GPU to break our array in 3 parts . 
-	////0 and Null are for the Interleaved. 
-	////GL_FLOAT- What is the type? .
-	////AMC_ATTRIBUTE_POSITION. here we are passing data to vPosition. 
-
-	//glEnableVertexAttribArray(AMC_ATTRIBUTE_POSITION);
+	glBufferData(GL_ARRAY_BUFFER, gMesh_Width * gMesh_Height * 4 * sizeof(float), NULL, GL_DYNAMIC_DRAW);
+	glVertexAttribPointer(AMC_ATTRIBUTE_COLOR, 4, GL_FLOAT, GL_FALSE, 0, NULL);
+	glEnableVertexAttribArray(AMC_ATTRIBUTE_COLOR);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
+
 	glGenBuffers(1, &vbo_texture);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo_texture);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(Textures), NULL, GL_DYNAMIC_DRAW);
@@ -1368,7 +1371,7 @@ void displayCPUAndGPUFont()
 
 	if (bOnGPU == false)
 	{
-		RenderText("CPU", 33.0f, 18.0f, 0.1f, vmath::vec3(1.0f, 1.0f, 0.0f));
+		RenderText(" CPU", 33.0f, 18.0f, 0.1f, vmath::vec3(1.0f, 1.0f, 0.0f));
 	}
 	else
 	{
@@ -1435,6 +1438,10 @@ void displayCudaAndCpu()
 		
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 
+		glBindBuffer(GL_ARRAY_BUFFER, vbo_Color_CPU);
+		glBufferData(GL_ARRAY_BUFFER, gMesh_Width * gMesh_Height * 4 * sizeof(float), Colors, GL_DYNAMIC_DRAW);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+
 	}
 	if (bOnGPU == true)
 	{
@@ -1455,10 +1462,18 @@ void displayCudaAndCpu()
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
 
 	}
+	else
+	{
+		glBindBuffer(GL_ARRAY_BUFFER, vbo_Color_CPU);
+		glVertexAttribPointer(AMC_ATTRIBUTE_COLOR, 4, GL_FLOAT, GL_FALSE, 0, NULL);
+		glEnableVertexAttribArray(AMC_ATTRIBUTE_COLOR);
+		glBindBuffer(GL_ARRAY_BUFFER, 0);
+	}
 
-	glBindBuffer(GL_ARRAY_BUFFER, vbo_texture);
+
+	/*glBindBuffer(GL_ARRAY_BUFFER, vbo_texture);
 	glBufferData(GL_ARRAY_BUFFER, gMesh_Width * gMesh_Height * 4 * sizeof(float), pos, GL_DYNAMIC_DRAW);
-
+*/
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 	//declaration of matrices
 	mat4 modelViewMatrix;
@@ -1516,7 +1531,9 @@ void display(void)
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	
-	displayFont();
+	//displayFont();
+
+	displayCudaAndCpu();
 
 
 	SwapBuffers(ghdc);
@@ -1597,39 +1614,7 @@ void FontColorAnimationUpdates()
 
 void launchCPUKernel(unsigned int MeshWidth, unsigned int MeshHeight, float Time)
 {
-	/*for (int i = 0; i< MeshWidth; i++)
-	{
-		for (int j = 0; j < MeshHeight; j++)
-		{
-			for (int k = 0; k < 4; k++)
-			{
-				float u = i / (float)MeshWidth;
-				float v = j / (float)MeshHeight;
-				u = (u * 2.0) - 1.0;
-				v = (v * 2.0) - 1.0;
-				float frequency = 4.0;
-				float w = sinf(frequency * u + Time) * cosf(frequency * v + Time) * 0.5;
-				if (k == 0)
-				{
-					pos[i][j][k] = u;
-				}
-				if (k == 1)
-				{
-					pos[i][j][k] = w;
-				}
-				if (k == 2)
-				{
-					pos[i][j][k] = v;
-				}
-				if (k == 3)
-				{
-					pos[i][j][k] = 1.0;
-				}
-
-
-			}
-		}
-	}*/
+	
 
 	float xExtent = 10.0f;
 	float yExtent = 10.0f;
@@ -1647,6 +1632,7 @@ void launchCPUKernel(unsigned int MeshWidth, unsigned int MeshHeight, float Time
 
 	int iLL = 0;
 	int idx = 255;
+	float localw = 0;
 	for (int i = 0; i < MeshWidth*MeshHeight; i++)
 	{
 		for (int j = 0; j < 4; j++)
@@ -1663,30 +1649,135 @@ void launchCPUKernel(unsigned int MeshWidth, unsigned int MeshHeight, float Time
 			u = u * 2.0f - 1.0f;
 			v = v * 2.0f - 1.0f;
 
-			if(j == 0)
+			if (j == 0)
+			{
 				pos[i][0] = u;
+				//Colors[i][0] = 1.0f;
+			}
 			if (j == 1)
 			{
+
 				float xCur = start[0] + ((float)(i % MeshWidth)) * delta[0];
 				float yCur = start[1] + ((float)(i / MeshWidth)) * delta[1];
 				float w = fBmCPU(xCur, yCur, octaves, lacunarity, gain) + zOffset;
-
+				localw = w;
 					//fprintf(gpLogFile, "divx.x : %f\t  div.y  : %f\n  ", xCur, yCur);
 
 				w = (w > 0.0f) ? w : 0.0f; // don't show region underwater
 
 				pos[i][1] = w;
-				
+			//	Colors[i][1] = 1.0f;
 			}
-			if(j == 2)
+			if (j == 2)
+			{
 				pos[i][2] = v;
-			if(j == 3)
+				//Colors[i][2] = 0.0f;
+			}
+			if (j == 3)
+			{
 				pos[i][3] = 1.0f;
+				//Colors[i][3] = 1.0f;
+			}
 			//fprintf(gpLogFile, "Value of %d\t %d\t : %f\n",i,j,pos[i][j]);
 		
+				#pragma region ColorCode
+
+			if (localw < -1.000f)
+			{
+				if (j == 0)
+					Colors[i][0] = 000;
+				else if (j == 1)
+					Colors[i][1] = 000;
+				else if (j == 2)
+					Colors[i][2] = 128;
+				else if (j == 3)
+					Colors[i][3] = 255;
+			}
+			else if (localw < -0.2500f)
+			{
+				if (j == 0)
+					Colors[i][0] = 000;
+				else if (j == 1)
+					Colors[i][1] = 000;
+				else if (j == 2)
+					Colors[i][2] = 255;
+				else if (j == 3)
+					Colors[i][3] = 255;
+			}
+			else if (localw < 0.000f)
+			{
+				if (j == 0)
+					Colors[i][0] = 000;
+				else if (j == 1)
+					Colors[i][1] = 128;
+				else if (j == 2)
+					Colors[i][2] = 255;
+				else if (j == 3)
+					Colors[i][3] = 255;
+			}
+			else if (localw < 0.0125f)
+			{
+				if (j == 0)
+					Colors[i][0] = 240;
+				else if (j == 1)
+					Colors[i][1] = 240;
+				else if (j == 2)
+					Colors[i][2] = 064;
+				else if (j == 3)
+					Colors[i][3] = 255;
+			}
+			else if (localw < 0.1250f)
+			{
+				if (j == 0)
+					Colors[i][0] = 032;
+				else if (j == 1)
+					Colors[i][1] = 260;
+				else if (j == 2)
+					Colors[i][2] = 000;
+				else if (j == 3)
+					Colors[i][3] = 255;
+			}
+			else if (localw < 0.3750f)
+			{
+				if (j == 0)
+					Colors[i][0] = 224;
+				else if (j == 1)
+					Colors[i][1] = 224;
+				else if (j == 2)
+					Colors[i][2] = 000;
+				else if (j == 3)
+					Colors[i][3] = 255;
+			}
+			else if (localw < 0.7500f)
+			{
+				if (j == 0)
+					Colors[i][0] = 128;
+				else if (j == 1)
+					Colors[i][1] = 128;
+				else if (j == 2)
+					Colors[i][2] = 128;
+				else if (j == 3)
+					Colors[i][3] = 255;
+			}
+			else
+			{
+				if (j == 0)
+					Colors[i][0] = 255;
+				else if (j == 1)
+					Colors[i][1] = 255;
+				else if (j == 2)
+					Colors[i][2] = 255;
+				else if (j == 3)
+					Colors[i][3] = 255;
+			}
+
+				#pragma endregion
+
+
 			
 		}
 		idx += 1;
+		
 
 	}
 	
@@ -1747,6 +1838,8 @@ float gradCPU(int hash, float x, float y, float z)
 	default: return 0; // never happens
 	}
 }
+
+
 
 void uninitialize(void)
 {
