@@ -48,6 +48,7 @@ std::map<GLchar, Character> Characters;
 
 //
 
+
 #define Z_PLANE 50.0f
 
 float xoffset, yoffset, sensitivity;
@@ -1464,6 +1465,8 @@ void displayCudaAndCpu()
 	}
 	else
 	{
+		//Here the new Color array will be given by the CPU to the GPU. 
+		//Calculated on CPU.
 		glBindBuffer(GL_ARRAY_BUFFER, vbo_Color_CPU);
 		glVertexAttribPointer(AMC_ATTRIBUTE_COLOR, 4, GL_FLOAT, GL_FALSE, 0, NULL);
 		glEnableVertexAttribArray(AMC_ATTRIBUTE_COLOR);
