@@ -24,15 +24,26 @@
 #include"inc/helper_timer.h"
 #pragma comment(lib,"cudart.lib")
 
+//timer
+StopWatchInterface *timerGPU = NULL;
+StopWatchInterface *timerCPU = NULL;
 
 //Variables for font rendering 
 
-float Red, RedTitle;
-float Green, GreenTitle;
-float Blue, BlueTitle;
+float Red, RedTitle,RedTitleEnd,RedEnd;
+float Green, GreenTitle,GreenTitleEnd,GreenEnd;
+float Blue, BlueTitle,BlueEnd,BlueTitleEnd;
+
+float timeGPU;
+float timeCPU;
 
 bool PresentsToggle = true;
+bool EndCreditsToggle = true;
+bool SirEndCreditsToggle = true;
 bool TitleToggle = true;
+
+bool startDisplay = false;
+
 GLuint vao_Text;
 GLuint vbo_position_Text;
 GLuint gShaderProgramObjectFont;
@@ -45,7 +56,7 @@ struct Character{
 
 std::map<GLchar, Character> Characters;
 
-
+bool encreditsCall = false;
 //
 
 
@@ -68,10 +79,12 @@ clock_t start_t, end_t, total_t;
 
 clock_t deltaTime = 0.0f;	// time between current frame and last frame
 clock_t lastFrame = 0.0f;
-vmath::vec3 cameraPos = vmath::vec3(0.0f, 0.0f, 9.0f);
+vmath::vec3 cameraPos = vmath::vec3(0.0f, 0.0f, 0.0f);
 vmath::vec3 cameraFront = vmath::vec3(0.0f, 0.0f, -1.0f);
 vmath::vec3 cameraUp = vmath::vec3(0.0f, 1.0f, 0.0f);
 float CameraSpeed = 0.08;
+
+bool CameraToggle = false;
 
 int k = 0;
 float gain = 0.75f, xStart = 2.0f, yStart = 1.0f;
@@ -82,6 +95,10 @@ float delta[2];
 
 bool Toggle = true;
 bool ToggleCPU = true;
+
+
+char CPUTIME[20];
+char GPUTIME[20];
 
 //CUDA VARIABLES
 
@@ -94,8 +111,8 @@ float zpos = -3.0f;
 float ypos = 0.0f;
 float xpos = 0.0f;
 
-const int gMesh_Width = 256;
-const int gMesh_Height = 256;
+const int gMesh_Width = 512;
+const int gMesh_Height = 512;
 #define MYARRAYSIZE gMesh_Width * gMesh_Height * 4
 float pos[gMesh_Width * gMesh_Height][4];
 struct cudaGraphicsResource *graphicsResource = NULL;
@@ -111,7 +128,7 @@ float positions[gMesh_Height *gMesh_Height *4];
 float Colors[gMesh_Width *gMesh_Height][4];
 float Textures[256 *256] [2];
 
-
+bool MainSceneFadeOut;
 
 const static unsigned char h_perm[] = { 151,160,137,91,90,15,
    131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23,
@@ -227,6 +244,10 @@ void update(void);
 void uninitialize(void);
 void launchCPUKernel(unsigned int MeshWidth, unsigned int MeshHeight, float Time);
 void launchCudaKernel(float4 *,unsigned int  , unsigned int  ,float );
+void EndCreditsFontAnimationUpdates();
+
+
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLine, int iCmdShow)
 {
 	int initialize(void);
@@ -312,7 +333,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLine
 	ShowWindow(hwnd, iCmdShow);
 	UpdateWindow(hwnd);
 	SetFocus(hwnd);
-
+	ToggleFullScreen();
 	//gameloop
 	while (bIsDone == false)
 	{
@@ -336,8 +357,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR szCmdLine
 
 			}
 			/*Here actually call Display,As this is Double Buffer Program. No need of WM_PAINT*/
-
-			display();
+			
+				display();
+			
 		}
 	}
 	return((int)msg.wParam);
@@ -411,10 +433,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 	case WM_CLOSE:
 		DestroyWindow(hwnd);
 		break;
+	
 	case WM_CHAR:
 		switch (wParam)
 		{
-
+				
 	/*	case 'w':
 			zpos += 0.2f;
 			break;
@@ -429,6 +452,22 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 			xpos -= 0.2f;
 			break;*/
 
+		case 'R':
+		case 'r':
+			cameraPos = vmath::vec3(0.0f, 0.0f, 0.0f);
+			cameraFront = vmath::vec3(0.0f, 0.0f, -1.0f);
+			cameraUp = vmath::vec3(0.0f, 1.0f, 0.0f);
+
+			CameraToggle = !CameraToggle;
+			break;
+
+		case 'B':
+		case 'b':
+			//MainSceneFadeOut = !MainSceneFadeOut;
+		//	EndCreditsFontAnimationUpdates();
+			encreditsCall = !encreditsCall;
+			break;
+		
 		case 'W':
 		case 'w':
 			cameraPos = cameraPos + (CameraSpeed * cameraFront);
@@ -502,6 +541,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 
 		switch (wParam)
 		{
+		case VK_SPACE:
+			startDisplay = true;
+			break;
 		case VK_ESCAPE:
 			DestroyWindow(hwnd);
 			break;
@@ -573,6 +615,8 @@ int LoadGLTextures(GLuint *texture, TCHAR imageResourceId[])
 }
 int initialize(void)
 {
+	
+
 	int LoadGLTextures(GLuint *, TCHAR[]);
 
 	int devCount;
@@ -720,20 +764,22 @@ int initialize(void)
 	const GLchar *fragmentShaderSourceCode =
 		"#version 430 core" \
 		"\n" \
-		"out vec4 FragColor;" \
+		"vec4 FragColor;" \
+		"out vec4 FinalColor;" \
 		"in vec4 out_Color;" \
 		"in vec2 outTexCoord;" \
 		"uniform sampler2D u_texture_sampler;" \
-		
+		"uniform float FadeOut;" 
 		"void main(void)" \
 		"{" \
 		"FragColor =  out_Color;"	\
+		"FinalColor =FragColor;" \
 		"}";
 
 	//FragColor = vec4(1,1,1,1) = White Color
 	//this means here we are giving color to the Triangle.
 
-
+	//"FinalColor = mix(vec4(FragColor),vec4(0.0),FadeOut);" \
 
 
 	//Specify above source code to the vertex shader object
@@ -1311,6 +1357,8 @@ void RenderText(std::string text, GLfloat x, GLfloat y, GLfloat scale, vmath::ve
 
 void displayFont()
 {
+	
+
 	glUseProgram(gShaderProgramObjectFont);
 
 	//declaration of matrices
@@ -1345,6 +1393,7 @@ void displayFont()
 }
 void displayCPUAndGPUFont()
 {
+
 	glUseProgram(gShaderProgramObjectFont);
 
 	//declaration of matrices
@@ -1360,7 +1409,7 @@ void displayCPUAndGPUFont()
 	TranslateMatrix = translate(-2.5f, 0.0f, -55.0f);
 
 	// perform necessary transformations
-	modelViewMatrix = TranslateMatrix;
+	modelViewMatrix = TranslateMatrix * scale(0.3f,0.3f,0.3f);
 	// do necessary matrix multiplication
 	// this was internally done by gluPerspective() in FFP.	
 
@@ -1372,11 +1421,28 @@ void displayCPUAndGPUFont()
 
 	if (bOnGPU == false)
 	{
-		RenderText(" CPU", 33.0f, 18.0f, 0.1f, vmath::vec3(1.0f, 1.0f, 0.0f));
+		sprintf_s(CPUTIME, "%f", timeCPU);
+		RenderText("On    : CPU", 90.0f, 68.0f, 0.1f, vmath::vec3(1.0f, 0.0f, 0.0f));		
+		
+		RenderText(CPUTIME, 105.0f, 62.0f, 0.1f, vmath::vec3(1.0f, 0.0f, 0.0f));
+		RenderText("Time : ", 90.0f, 62.0f, 0.1f, vmath::vec3(1.0f, 0.0f, 0.0f));
+		RenderText("ms", 132.0f, 62.0f, 0.1f, vmath::vec3(1.0f, 0.0f, 0.0f));
+		
+		RenderText("Vertices : 512 * 512 * 4 ", -120.0f, 68.0f, 0.1f, vmath::vec3(1.0f, 1.0f, 0.0f));
+	
+	    //RenderText("MESH : 256 * 256 * 4", -33.0f, 18.0f, 0.1f, vmath::vec3(1.0f, 1.0f, 0.0f));
 	}
 	else
 	{
-		RenderText("GPU", 33.0f, 18.0f, 0.1f, vmath::vec3(0.0f, 1.0f, 0.0f));
+		sprintf_s(GPUTIME, "%f", timeGPU);
+		RenderText("On    : GPU", 90.0f, 68.0f, 0.1f, vmath::vec3(0.0f, 1.0f, 0.0f));
+
+		RenderText(GPUTIME, 105.0f, 62.0f, 0.1f, vmath::vec3(0.0f, 1.0f, 0.0f));
+		RenderText("ms", 126.5f, 62.0f, 0.1f, vmath::vec3(0.0f, 1.0f, 0.0f));
+		RenderText("Time : ", 90.0f, 62.0f, 0.1f, vmath::vec3(0.0f, 1.0f, 0.0f));
+
+		RenderText("Vertices : 512 * 512 * 4 ", -120.0f, 68.0f, 0.1f, vmath::vec3(1.0f, 1.0f, 0.0f));
+
 	}
 
 
@@ -1385,8 +1451,10 @@ void displayCPUAndGPUFont()
 	glUseProgram(0);
 }
 void displayCudaAndCpu()
-{
+{	
 	void displayCPUAndGPUFont();
+
+	static float FadeOut =0.0f;
 
 	displayCPUAndGPUFont();
 	glUseProgram(gShaderProgramObject);
@@ -1420,10 +1488,22 @@ void displayCudaAndCpu()
 		{
 			fprintf(gpLogFile, "STEP 2 FAILED\n");
 		}
+
+		sdkCreateTimer(&timerGPU);
+		sdkStartTimer(&timerGPU);
+
 		launch_kernel(pPos, pColor, gMesh_Width, gMesh_Height, animationTime);
 		cudaMemcpy(positions, pPos, 4 * gMesh_Width * gMesh_Height * sizeof(float), cudaMemcpyDeviceToHost);
 		error = cudaGraphicsUnmapResources(1, &graphicsResource, 0);
 		error = cudaGraphicsUnmapResources(1, &graphicsResourceColor, 0);
+
+
+		
+		timeGPU = sdkGetTimerValue(&timerGPU);
+		
+		sdkDeleteTimer(&timerGPU);
+
+
 		if (error != cudaSuccess)
 		{
 			fprintf(gpLogFile, "STEP 3 FAILED\n");
@@ -1433,6 +1513,10 @@ void displayCudaAndCpu()
 	}
 	else
 	{
+		sdkCreateTimer(&timerCPU);
+		sdkStartTimer(&timerCPU);
+		
+
 		launchCPUKernel(gMesh_Width, gMesh_Height, animationTime);
 		glBindBuffer(GL_ARRAY_BUFFER, vbo);
 		glBufferData(GL_ARRAY_BUFFER, gMesh_Width * gMesh_Height * 4 * sizeof(float) , pos, GL_DYNAMIC_DRAW);
@@ -1442,6 +1526,11 @@ void displayCudaAndCpu()
 		glBindBuffer(GL_ARRAY_BUFFER, vbo_Color_CPU);
 		glBufferData(GL_ARRAY_BUFFER, gMesh_Width * gMesh_Height * 4 * sizeof(float), Colors, GL_DYNAMIC_DRAW);
 		glBindBuffer(GL_ARRAY_BUFFER, 0);
+		
+		
+		timeCPU = sdkGetTimerValue(&timerCPU);
+		sdkDeleteTimer(&timerCPU);
+		
 
 	}
 	if (bOnGPU == true)
@@ -1490,8 +1579,14 @@ void displayCudaAndCpu()
 	modelViewProjectionMatrix = mat4::identity();
 
 	// perform necessary transformations
-	modelViewMatrix = translate(0.0f, 0.0f, 0.0f);
 
+	if(!CameraToggle)
+		modelViewMatrix = translate(0.0f, -0.0f, -10.0f);
+	else
+	{
+		modelViewMatrix = translate(0.0f, -0.0f, -3.0f);
+		modelViewMatrix *= rotate(90.0f, 1.0f, 0.0f, 0.0f);
+	}
 	modelViewMatrix = viewMatrix * modelViewMatrix;
 	//modelViewMatrix *= rotate(90.0f, 1.0f, 0.0f, 0.0f);
 	// do necessary matrix multiplication
@@ -1501,7 +1596,12 @@ void displayCudaAndCpu()
 
 	// send necessary matrices to shader in respective uniforms
 	glUniformMatrix4fv(mvpUniform, 1, GL_FALSE, modelViewProjectionMatrix);
-	
+	glUniform1f(glGetUniformLocation(gShaderProgramObject, "FadeOut"), FadeOut);
+
+	if (MainSceneFadeOut)
+	{
+		FadeOut += 0.0003f;
+	}
 	//glActiveTexture(GL_TEXTURE0);					
 	//glBindTexture(GL_TEXTURE_2D, gTextureStone);	
 	//glUniform1i(gTextureSamplerUniform, 0);
@@ -1526,22 +1626,120 @@ void display(void)
 {
 	void displayFont();
 	
-	end_t = clock();
-	deltaTime = end_t - lastFrame;
-	lastFrame = end_t;
-
-
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 	
-	//displayFont();
+		end_t = clock();
+		deltaTime = end_t - lastFrame;
+		lastFrame = end_t;
 
-	displayCudaAndCpu();
+
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		if (startDisplay)
+		{
+			if (encreditsCall)
+				EndCreditsFontAnimationUpdates();
+			else
+				displayFont();
+		}
+
+		//	displayCudaAndCpu();
 
 
-	SwapBuffers(ghdc);
-	animationTime = animationTime + 0.01f;
+		SwapBuffers(ghdc);
+		animationTime = animationTime + 0.01f;
+	
+}
 
+void EndCreditsFontAnimationUpdates()
+{
+	glUseProgram(gShaderProgramObjectFont);
+
+	//declaration of matrices
+	mat4 modelViewMatrix;
+	mat4 modelViewProjectionMatrix;
+	mat4 RotationMatrix;
+	mat4 TranslateMatrix;
+	// intialize above matrices to identity
+	modelViewMatrix = mat4::identity();
+	modelViewProjectionMatrix = mat4::identity();
+	RotationMatrix = mat4::identity();
+	TranslateMatrix = mat4::identity();
+	TranslateMatrix = translate(-2.5f, 0.0f, -55.0f);
+
+	// perform necessary transformations
+	modelViewMatrix = TranslateMatrix;
+	// do necessary matrix multiplication
+	// this was internally done by gluPerspective() in FFP.	
+
+	modelViewProjectionMatrix = perspectiveProjectionMatrix * modelViewMatrix;
+
+	// send necessary matrices to shader in respective uniforms
+	glUniformMatrix4fv(mvpUniformFont, 1, GL_FALSE, modelViewProjectionMatrix);
+	if (RedEnd <= 1.0f && EndCreditsToggle)
+	{
+		/*RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(1.0f, Green, Blue));
+		RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));*/
+
+		RenderText("TECHNOLOGY : CUDA", -33.0f, 6.0f, 0.1f, vmath::vec3(RedEnd,GreenEnd,BlueEnd));
+		RenderText("RENDERER      : OPENGL", -33.0f, -2.0f, 0.1f, vmath::vec3(RedEnd, GreenEnd, BlueEnd));
+		RenderText("LANGUAGE      : C", -33.0f, -10.0f, 0.1f, vmath::vec3(RedEnd, GreenEnd, BlueEnd));
+	
+
+		RedEnd += 0.00009f;
+		if (GreenEnd <= 0.5f)
+			GreenEnd += 0.000045f;
+	}
+	if (RedEnd >= 1.0f)
+		EndCreditsToggle = false;
+
+	if (!EndCreditsToggle)
+	{
+
+		RenderText("TECHNOLOGY : CUDA", -33.0f, 6.0f, 0.1f, vmath::vec3(RedEnd, GreenEnd, BlueEnd));
+		RenderText("RENDERER      : OPENGL", -33.0f, -2.0f, 0.1f, vmath::vec3(RedEnd, GreenEnd, BlueEnd));
+		RenderText("LANGUAGE      : C", -33.0f, -10.0f, 0.1f, vmath::vec3(RedEnd, GreenEnd, BlueEnd));
+
+
+		if (RedEnd >= 0.0f)
+			RedEnd -= 0.00009f;
+
+		if (GreenEnd >= 0.0f)
+			GreenEnd -= 0.000045f;
+
+		if (RedEnd <= 0.0f)
+		{
+			if (RedTitleEnd <= 1.0f && SirEndCreditsToggle)
+			{
+				RenderText("IGNITED BY", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitleEnd, GreenTitleEnd, 0.0f));
+				RenderText("MY GURU", -14.0f, -1.0f, 0.1f, vmath::vec3(RedTitleEnd, GreenTitleEnd, 0.0f));
+				RenderText("DR.VIJAY GOKHALE SIR", -27.8f, -8.0f, 0.1f, vmath::vec3(RedTitleEnd, GreenTitleEnd, 0.0f));
+
+				RedTitleEnd += 0.00009f;
+				if (GreenTitleEnd <= 0.5f)
+					GreenTitleEnd += 0.000045f;
+			}
+
+			if (RedTitleEnd >= 1.0f)
+				SirEndCreditsToggle = false;
+
+			if (!SirEndCreditsToggle)
+			{
+				RenderText("IGNITED BY", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitleEnd, GreenTitleEnd, 0.0f));
+				RenderText("MY GURU", -14.0f, -1.0f, 0.1f, vmath::vec3(RedTitleEnd, GreenTitleEnd, 0.0f));
+				RenderText("DR.VIJAY GOKHALE SIR", -27.8f, -8.0f, 0.1f, vmath::vec3(RedTitleEnd, GreenTitleEnd, 0.0f));
+
+				if (RedTitleEnd >= 0.0f)
+					RedTitleEnd -= 0.00009f;
+
+				if (GreenTitleEnd >= 0.0f)
+					GreenTitleEnd -= 0.000045f;
+
+			}
+			
+		}
+	}
 }
 
 void FontColorAnimationUpdates()
@@ -1549,12 +1747,15 @@ void FontColorAnimationUpdates()
 	void displayCudaAndCpu();
 
 
-	if (Red <= 1.0f && PresentsToggle)
+	if (Red <= 1.0f && PresentsToggle && !encreditsCall)
 	{
 		RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(Red, Green, Blue));
 		RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
 		RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
 		RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+
+
+		//RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
 
 
 		Red += 0.00009f;
@@ -1564,7 +1765,7 @@ void FontColorAnimationUpdates()
 	if (Red >= 1.0f)
 		PresentsToggle = false;
 
-	if (!PresentsToggle)
+	if (!PresentsToggle && !encreditsCall)
 	{
 
 		RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(Red, Green, Blue));
@@ -1580,7 +1781,7 @@ void FontColorAnimationUpdates()
 
 		if (Red <= 0.0f)
 		{
-			if (RedTitle <= 1.0f && TitleToggle)
+			if (RedTitle <= 1.0f && TitleToggle && !encreditsCall)
 			{
 				RenderText("Virtual Terrain", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
 				RenderText("using", -8.0f, -1.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
@@ -1594,7 +1795,7 @@ void FontColorAnimationUpdates()
 			if (RedTitle >= 1.0f)
 				TitleToggle = false;
 
-			if (!TitleToggle)
+			if (!TitleToggle && !encreditsCall)
 			{
 				RenderText("Virtual Terrain", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
 				RenderText("using", -8.0f, -1.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
@@ -1607,8 +1808,9 @@ void FontColorAnimationUpdates()
 					GreenTitle -= 0.000045f;
 
 			}
-			if (RedTitle <= 0.0f)
+			if (RedTitle <= 0.0f && !encreditsCall)
 			{
+
 				displayCudaAndCpu();
 			}
 		}
