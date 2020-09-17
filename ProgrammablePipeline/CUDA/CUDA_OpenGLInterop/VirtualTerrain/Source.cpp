@@ -43,7 +43,7 @@ bool SirEndCreditsToggle = true;
 bool TitleToggle = true;
 
 bool startDisplay = false;
-
+bool mainCUDAContent = false;
 GLuint vao_Text;
 GLuint vbo_position_Text;
 GLuint gShaderProgramObjectFont;
@@ -1580,8 +1580,11 @@ void displayCudaAndCpu()
 
 	// perform necessary transformations
 
-	if(!CameraToggle)
+	if (!CameraToggle)
+	{
 		modelViewMatrix = translate(0.0f, -0.0f, -10.0f);
+		modelViewMatrix *= scale(50.0f, 25.0f, 50.0f);
+	}
 	else
 	{
 		modelViewMatrix = translate(0.0f, -0.0f, -3.0f);
@@ -1609,7 +1612,7 @@ void displayCudaAndCpu()
 	// bind with textures
 
 	// draw necessary scene
-	glDrawArrays(GL_POINTS, 0, gMesh_Width * gMesh_Height*4);
+	glDrawArrays(GL_LINES, 0, gMesh_Width * gMesh_Height*4);
 	
 	glBindVertexArray(0);
 
@@ -1642,7 +1645,7 @@ void display(void)
 				displayFont();
 		}
 
-		//	displayCudaAndCpu();
+			displayCudaAndCpu();
 
 
 		SwapBuffers(ghdc);
@@ -1749,11 +1752,13 @@ void FontColorAnimationUpdates()
 
 	if (Red <= 1.0f && PresentsToggle && !encreditsCall)
 	{
-		RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(Red, Green, Blue));
-		RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
-		RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
-		RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
-
+		if (!mainCUDAContent)
+		{
+			RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(Red, Green, Blue));
+			RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+			RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+			RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		}
 
 		//RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
 
@@ -1768,10 +1773,13 @@ void FontColorAnimationUpdates()
 	if (!PresentsToggle && !encreditsCall)
 	{
 
-		RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(Red, Green, Blue));
-		RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
-		RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
-		RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		if (!mainCUDAContent)
+		{
+			RenderText("ASTROMEDICOMP'S", -23.0f, 6.0f, 0.1f, vmath::vec3(Red, Green, Blue));
+			RenderText("BLEND", -18.0f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+			RenderText("GROUP", 1.5f, -2.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+			RenderText("PRESENTS", -14.0f, -10.0f, 0.1f, vmath::vec3(Red, Green, 0.0f));
+		}
 
 		if (Red >= 0.0f)
 			Red -= 0.00009f;
@@ -1783,10 +1791,12 @@ void FontColorAnimationUpdates()
 		{
 			if (RedTitle <= 1.0f && TitleToggle && !encreditsCall)
 			{
-				RenderText("Virtual Terrain", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
-				RenderText("using", -8.0f, -1.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
-				RenderText("3D Perlin Noise", -16.8f, -8.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
-
+				if (!mainCUDAContent)
+				{
+					RenderText("Virtual Terrain", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+					RenderText("using", -8.0f, -1.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+					RenderText("3D Perlin Noise", -16.8f, -8.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+				}
 				RedTitle += 0.00009f;
 				if (GreenTitle <= 0.5f)
 					GreenTitle += 0.000045f;
@@ -1797,22 +1807,25 @@ void FontColorAnimationUpdates()
 
 			if (!TitleToggle && !encreditsCall)
 			{
-				RenderText("Virtual Terrain", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
-				RenderText("using", -8.0f, -1.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
-				RenderText("3D Perlin Noise", -16.8f, -8.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
-
+				if (!mainCUDAContent)
+				{
+					RenderText("Virtual Terrain", -16.0f, 6.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+					RenderText("using", -8.0f, -1.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+					RenderText("3D Perlin Noise", -16.8f, -8.0f, 0.1f, vmath::vec3(RedTitle, GreenTitle, 0.0f));
+				}
 				if (RedTitle >= 0.0f)
 					RedTitle -= 0.00009f;
 
 				if (GreenTitle >= 0.0f)
 					GreenTitle -= 0.000045f;
 
+				if (RedTitle <= 0.0f && !encreditsCall)
+				{
+					mainCUDAContent = true;
+					displayCudaAndCpu();
+				}
 			}
-			if (RedTitle <= 0.0f && !encreditsCall)
-			{
-
-				displayCudaAndCpu();
-			}
+			
 		}
 	}
 }
